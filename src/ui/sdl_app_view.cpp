@@ -24,11 +24,15 @@ namespace spatial_midi {
         constexpr SDL_Color kBackground{18, 20, 26, 255};
         constexpr SDL_Color kGrid{38, 42, 52, 255};
         constexpr SDL_Color kEdge{112, 128, 154, 255};
+        constexpr SDL_Color kHighlightedEdge{174, 190, 216, 255};
         constexpr SDL_Color kEdgeLabel{184, 195, 214, 255};
         constexpr SDL_Color kCounterEdge{77, 201, 181, 255};
+        constexpr SDL_Color kHighlightedCounterEdge{139, 232, 216, 255};
         constexpr SDL_Color kCounterEdgeLabel{147, 235, 221, 255};
         constexpr SDL_Color kRelayEdge{117, 91, 169, 255};
+        constexpr SDL_Color kHighlightedRelayEdge{190, 160, 232, 255};
         constexpr SDL_Color kRelayCounterEdge{172, 111, 202, 255};
+        constexpr SDL_Color kHighlightedRelayCounterEdge{224, 174, 241, 255};
         constexpr SDL_Color kNodeFill{48, 94, 135, 255};
         constexpr SDL_Color kNodeBorder{134, 194, 235, 255};
         constexpr SDL_Color kRelayFill{73, 57, 108, 255};
@@ -371,89 +375,123 @@ namespace spatial_midi {
     }
 
     void SdlApp::draw_edges() {
-        // Relay output edges are the lowest graph layer. Their screen-space
-        // length is purely visual; the graph model assigns them zero ticks.
-        for (const Edge &edge: graph_.edges()) {
-            const Node *source = graph_.find_node(edge.source_id);
-            const Node *target = graph_.find_node(edge.target_id);
-            if (!source || !target || !is_relay(*source)) {
-                continue;
+        std::optional<int> highlighted_source_id;
+        if (selected_id_) {
+            const Node *selected = graph_.find_node(*selected_id_);
+            if (selected) {
+                highlighted_source_id = selected->id;
             }
-
-            const Point start = grid_to_screen(source->x, source->y);
-            const Point target_center = grid_to_screen(target->x, target->y);
-            const double dx = static_cast<double>(target_center.x - start.x);
-            const double dy = static_cast<double>(target_center.y - start.y);
-            const double length = std::hypot(dx, dy);
-            if (length <= 0.0) {
-                continue;
-            }
-
-            const double unit_x = dx / length;
-            const double unit_y = dy / length;
-            const double target_margin = kNodeRadius + 4.0;
-            const Point tip{
-                static_cast<int>(std::lround(target_center.x - unit_x * target_margin)),
-                static_cast<int>(std::lround(target_center.y - unit_y * target_margin)),
-            };
-
-            const SDL_Color color = source->routing_mode == RoutingMode::Counter
-                                        ? kRelayCounterEdge
-                                        : kRelayEdge;
-            draw_thick_line(start, tip, 2, color);
-
-            const Point base{
-                static_cast<int>(std::lround(tip.x - unit_x * 9.0)),
-                static_cast<int>(std::lround(tip.y - unit_y * 9.0)),
-            };
-            const Point wing_a{
-                static_cast<int>(std::lround(base.x - unit_y * 5.0)),
-                static_cast<int>(std::lround(base.y + unit_x * 5.0)),
-            };
-            const Point wing_b{
-                static_cast<int>(std::lround(base.x + unit_y * 5.0)),
-                static_cast<int>(std::lround(base.y - unit_x * 5.0)),
-            };
-            draw_filled_triangle(tip, wing_a, wing_b, color);
         }
+
+        const auto edge_is_highlighted = [&](const Edge &edge) {
+            return highlighted_source_id && edge.source_id == *highlighted_source_id;
+        };
+
+        // Non-highlighted relay output edges are the lowest graph layer. Their
+        // screen-space length is purely visual; the graph model assigns zero ticks.
+        const auto draw_relay_edges = [&](bool highlighted) {
+            for (const Edge &edge: graph_.edges()) {
+                if (edge_is_highlighted(edge) != highlighted) {
+                    continue;
+                }
+
+                const Node *source = graph_.find_node(edge.source_id);
+                const Node *target = graph_.find_node(edge.target_id);
+                if (!source || !target || !is_relay(*source)) {
+                    continue;
+                }
+
+                const Point start = grid_to_screen(source->x, source->y);
+                const Point target_center = grid_to_screen(target->x, target->y);
+                const double dx = static_cast<double>(target_center.x - start.x);
+                const double dy = static_cast<double>(target_center.y - start.y);
+                const double length = std::hypot(dx, dy);
+                if (length <= 0.0) {
+                    continue;
+                }
+
+                const double unit_x = dx / length;
+                const double unit_y = dy / length;
+                const double target_margin = kNodeRadius + 4.0;
+                const Point tip{
+                    static_cast<int>(std::lround(target_center.x - unit_x * target_margin)),
+                    static_cast<int>(std::lround(target_center.y - unit_y * target_margin)),
+                };
+
+                const bool counter = source->routing_mode == RoutingMode::Counter;
+                const SDL_Color color = highlighted
+                                            ? (counter ? kHighlightedRelayCounterEdge : kHighlightedRelayEdge)
+                                            : (counter ? kRelayCounterEdge : kRelayEdge);
+                draw_thick_line(start, tip, 2, color);
+
+                const Point base{
+                    static_cast<int>(std::lround(tip.x - unit_x * 9.0)),
+                    static_cast<int>(std::lround(tip.y - unit_y * 9.0)),
+                };
+                const Point wing_a{
+                    static_cast<int>(std::lround(base.x - unit_y * 5.0)),
+                    static_cast<int>(std::lround(base.y + unit_x * 5.0)),
+                };
+                const Point wing_b{
+                    static_cast<int>(std::lround(base.x + unit_y * 5.0)),
+                    static_cast<int>(std::lround(base.y - unit_x * 5.0)),
+                };
+                draw_filled_triangle(tip, wing_a, wing_b, color);
+            }
+        };
 
         // Ordinary edges retain Manhattan routing and distance-derived timing.
-        for (const Edge &edge: graph_.edges()) {
-            const Node *source = graph_.find_node(edge.source_id);
-            const Node *target = graph_.find_node(edge.target_id);
-            if (!source || !target || is_relay(*source)) {
-                continue;
-            }
+        // Draw selected-node output edges last so they remain legible wherever
+        // Manhattan routes overlap. Each length label stays in its edge's layer.
+        const auto draw_manhattan_edges = [&](bool highlighted) {
+            for (const Edge &edge: graph_.edges()) {
+                if (edge_is_highlighted(edge) != highlighted) {
+                    continue;
+                }
 
-            const bool counter = source->routing_mode == RoutingMode::Counter;
-            const SDL_Color color = counter ? kCounterEdge : kEdge;
-            const int target_margin = is_relay(*target)
-                                          ? kRelayHalfSize + 4
-                                          : kNodeRadius + 4;
-            auto [points, direction] = orthogonal_edge_route(
-                grid_to_screen(source->x, source->y),
-                grid_to_screen(target->x, target->y),
-                target_margin);
+                const Node *source = graph_.find_node(edge.source_id);
+                const Node *target = graph_.find_node(edge.target_id);
+                if (!source || !target || is_relay(*source)) {
+                    continue;
+                }
 
-            for (std::size_t index = 1; index < points.size(); ++index) {
-                draw_thick_line(points[index - 1], points[index], 3, color);
-            }
-            if (points.size() >= 2) {
-                draw_arrowhead(points.back(), direction, color);
-            }
+                const bool counter = source->routing_mode == RoutingMode::Counter;
+                const SDL_Color color = highlighted
+                                            ? (counter ? kHighlightedCounterEdge : kHighlightedEdge)
+                                            : (counter ? kCounterEdge : kEdge);
+                const int target_margin = is_relay(*target)
+                                              ? kRelayHalfSize + 4
+                                              : kNodeRadius + 4;
+                auto [points, direction] = orthogonal_edge_route(
+                    grid_to_screen(source->x, source->y),
+                    grid_to_screen(target->x, target->y),
+                    target_margin);
 
-            const Point midpoint = polyline_midpoint(points);
-            const std::string ticks = std::to_string(
-                graph_.edge_ticks(edge.source_id, edge.target_id));
-            const CachedText text = (counter ? *counter_edge_cache_ : *edge_cache_).get(ticks);
-            SDL_Rect destination{
-                midpoint.x - text.width / 2,
-                midpoint.y - text.height / 2,
-                text.width,
-                text.height,
-            };
-            SDL_RenderCopy(renderer_, text.texture, nullptr, &destination);
-        }
+                for (std::size_t index = 1; index < points.size(); ++index) {
+                    draw_thick_line(points[index - 1], points[index], 3, color);
+                }
+                if (points.size() >= 2) {
+                    draw_arrowhead(points.back(), direction, color);
+                }
+
+                const Point midpoint = polyline_midpoint(points);
+                const std::string ticks = std::to_string(
+                    graph_.edge_ticks(edge.source_id, edge.target_id));
+                const CachedText text = (counter ? *counter_edge_cache_ : *edge_cache_).get(ticks);
+                SDL_Rect destination{
+                    midpoint.x - text.width / 2,
+                    midpoint.y - text.height / 2,
+                    text.width,
+                    text.height,
+                };
+                SDL_RenderCopy(renderer_, text.texture, nullptr, &destination);
+            }
+        };
+
+        draw_relay_edges(false);
+        draw_manhattan_edges(false);
+        draw_relay_edges(true);
+        draw_manhattan_edges(true);
     }
 
     void SdlApp::draw_nodes(const TransportSnapshot &transport) {
@@ -843,33 +881,27 @@ namespace spatial_midi {
     }
 
     void SdlApp::draw_filled_triangle(Point first, Point second, Point third, SDL_Color color) {
-        set_color(renderer_, color);
+        const std::array<SDL_Vertex, 3> vertices{
+            SDL_Vertex{
+                .position = {static_cast<float>(first.x), static_cast<float>(first.y)},
+                .color = color,
+                .tex_coord = {},
+            },
+            SDL_Vertex{
+                .position = {static_cast<float>(second.x), static_cast<float>(second.y)},
+                .color = color,
+                .tex_coord = {},
+            },
+            SDL_Vertex{
+                .position = {static_cast<float>(third.x), static_cast<float>(third.y)},
+                .color = color,
+                .tex_coord = {},
+            },
+        };
 
-        const int min_y = std::min({first.y, second.y, third.y,});
-        const int max_y = std::max({first.y, second.y, third.y,});
-
-        for (int y = min_y; y <= max_y; ++y) {
-            std::vector<double> intersections;
-            const auto intersect_edge = [&](Point start, Point end) {
-                const bool crosses = (start.y <= y && end.y > y) || (end.y <= y && start.y > y);
-                if (!crosses) {
-                    return;
-                }
-
-                intersections.push_back(
-                    start.x + (static_cast<double>(y - start.y) / (end.y - start.y)) * (end.x - start.x));
-            };
-
-            intersect_edge(first, second);
-            intersect_edge(second, third);
-            intersect_edge(third, first);
-
-            if (intersections.size() >= 2) {
-                std::ranges::sort(intersections);
-                SDL_RenderDrawLine(renderer_, static_cast<int>(std::ceil(intersections.front())), y,
-                                   static_cast<int>(std::floor(intersections.back())), y);
-            }
-        }
+        // A failed geometry submission intentionally leaves the arrowhead undrawn.
+        (void) SDL_RenderGeometry(
+            renderer_, nullptr, vertices.data(), static_cast<int>(vertices.size()), nullptr, 0);
     }
 
     void SdlApp::draw_cached(TextCache &cache, const std::string &text, SDL_Rect destination) {
