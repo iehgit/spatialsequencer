@@ -71,13 +71,6 @@ namespace spatial_midi {
         return playing() && clock_output_running_;
     }
 
-    std::string SequencerEngine::clock_switch_pending() const {
-        if (clock_output_switch_pending_) {
-            return *clock_output_switch_pending_ ? "output_on" : "output_off";
-        }
-        return external_switch_pending_.value_or("");
-    }
-
     std::size_t SequencerEngine::scheduled_event_count() const noexcept {
         return events_.size() + clock_events_.size() +
                armed_clock_releases_.size();
@@ -134,12 +127,13 @@ namespace spatial_midi {
             .bpm = bpm,
             .midi_clock_enabled = midi_clock_enabled,
             .midi_clock_active = midi_clock_active(),
+            .midi_clock_output_switch_pending = clock_output_switch_pending_,
             .external_clock_enabled = external_clock_enabled,
             .output_channel = output_channel,
             .release_gap_eighths = release_gap_eighths,
             .external_clock_active = external_clock_active(),
+            .external_clock_switch_pending = external_switch_pending_,
             .state = state,
-            .clock_switch_pending = clock_switch_pending(),
             .max_event_lateness_ms = max_event_lateness * 1000.0,
             .missed_deadlines = missed_deadlines,
             .input_gaps = input_gaps,
@@ -356,7 +350,7 @@ namespace spatial_midi {
             external_pulse_times_.clear();
 
             if (state == TransportState::Paused || playing()) {
-                external_switch_pending_ = "input_on";
+                external_switch_pending_ = ExternalClockSwitch::ToExternal;
             } else {
                 external_switch_pending_.reset();
                 external_clock_active_ = true;
@@ -364,9 +358,9 @@ namespace spatial_midi {
                 state = TransportState::WaitingForClock;
             }
         } else if (state == TransportState::Paused && external_clock_active_) {
-            external_switch_pending_ = "input_off";
+            external_switch_pending_ = ExternalClockSwitch::ToInternal;
         } else if (external_clock_active() && playing()) {
-            external_switch_pending_ = "input_off";
+            external_switch_pending_ = ExternalClockSwitch::ToInternal;
         } else {
             external_switch_pending_.reset();
             external_clock_active_ = false;
@@ -708,7 +702,7 @@ namespace spatial_midi {
         }
 
         if (status == kMidiStart) {
-            if (playing() && external_switch_pending_ == "input_on") {
+            if (playing() && external_switch_pending_ == ExternalClockSwitch::ToExternal) {
                 record_external_pulse(timestamp);
                 switch_internal_to_external(timestamp);
             } else if (!playing()) {
@@ -735,7 +729,7 @@ namespace spatial_midi {
             return 0;
         }
 
-        if (external_switch_pending_ == "input_on") {
+        if (external_switch_pending_ == ExternalClockSwitch::ToExternal) {
             ++external_alignment_pulses_;
             if (external_alignment_pulses_ >= kMidiClockPulsesPerSixteenth) {
                 switch_internal_to_external(timestamp);
@@ -753,7 +747,7 @@ namespace spatial_midi {
                 flush_clock_releases_at_pulse(timestamp) +
                 process_clock_events_at_pulse(timestamp);
 
-        if (external_switch_pending_ == "input_off" &&
+        if (external_switch_pending_ == ExternalClockSwitch::ToInternal &&
             external_pulse_ % kMidiClockPulsesPerSixteenth == 0) {
             switch_external_to_internal(timestamp);
             external_switch_pending_.reset();

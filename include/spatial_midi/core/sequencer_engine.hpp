@@ -8,7 +8,6 @@
 #include <optional>
 #include <random>
 #include <set>
-#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -36,8 +35,6 @@ namespace spatial_midi {
         [[nodiscard]] bool external_clock_active() const noexcept;
 
         [[nodiscard]] bool midi_clock_active() const noexcept;
-
-        [[nodiscard]] std::string clock_switch_pending() const;
 
         [[nodiscard]] std::size_t scheduled_event_count() const noexcept;
 
@@ -206,7 +203,7 @@ namespace spatial_midi {
         void stop_clock_output(double deadline);
 
         bool external_clock_active_ = false;
-        std::optional<std::string> external_switch_pending_;
+        std::optional<ExternalClockSwitch> external_switch_pending_;
         int external_alignment_pulses_ = 0;
 
         // Binary heaps ordered by deadline, priority, then insertion sequence.

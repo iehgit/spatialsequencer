@@ -49,6 +49,11 @@ namespace spatial_midi {
         DeviceError,
     };
 
+    enum class ExternalClockSwitch {
+        ToExternal,
+        ToInternal,
+    };
+
     struct Node {
         int id = 0;
         int x = 0;
@@ -81,12 +86,13 @@ namespace spatial_midi {
         double bpm = kDefaultTempo;
         bool midi_clock_enabled = false;
         bool midi_clock_active = false;
+        std::optional<bool> midi_clock_output_switch_pending;
         bool external_clock_enabled = false;
         int output_channel = 0;
         int release_gap_eighths = kDefaultReleaseGapEighths;
         bool external_clock_active = false;
+        std::optional<ExternalClockSwitch> external_clock_switch_pending;
         TransportState state = TransportState::Stopped;
-        std::string clock_switch_pending;
         double max_event_lateness_ms = 0.0;
         std::uint64_t missed_deadlines = 0;
         std::uint64_t input_gaps = 0;

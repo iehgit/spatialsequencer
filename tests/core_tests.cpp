@@ -689,7 +689,7 @@ namespace {
         SequencerEngine engine(graph, midi, 120.0, 0, 1, 14);
         engine.start(0.0);
         engine.toggle_midi_clock(true, 0.050);
-        CHECK(engine.clock_switch_pending() == "output_on");
+        CHECK(engine.snapshot().midi_clock_output_switch_pending == true);
         engine.process(0.124999);
         CHECK(std::ranges::none_of(midi.events, [](const RecordedMidi& e) { return e.kind ==
             RecordedMidi::Kind::Realtime && e.status == kMidiStart; }));
@@ -699,7 +699,7 @@ namespace {
         CHECK(midi.events.back().kind == RecordedMidi::Kind::Realtime && midi.events.back().status == kMidiTimingClock);
 
         engine.toggle_midi_clock(false, 0.130);
-        CHECK(engine.clock_switch_pending() == "output_off");
+        CHECK(engine.snapshot().midi_clock_output_switch_pending == false);
         engine.process(0.250);
         CHECK(midi.events[midi.events.size() - 2].status == kMidiTimingClock);
         CHECK(midi.events.back().status == kMidiStop);
@@ -759,16 +759,20 @@ namespace {
         SequencerEngine handoff_engine(handoff, handoff_midi, 120.0, 0, 1, 17);
         handoff_engine.start(0.0);
         handoff_engine.set_external_clock(true, 0.010);
+        CHECK(handoff_engine.snapshot().external_clock_switch_pending == ExternalClockSwitch::ToExternal);
         for (int pulse = 1; pulse <= 6; ++pulse) {
             handoff_engine.process_external_message(kMidiTimingClock, pulse / 48.0);
         }
         CHECK(handoff_engine.external_clock_active());
+        CHECK(!handoff_engine.snapshot().external_clock_switch_pending);
         handoff_engine.set_external_clock(false, 0.126);
+        CHECK(handoff_engine.snapshot().external_clock_switch_pending == ExternalClockSwitch::ToInternal);
         for (int pulse = 7; pulse <= 12; ++pulse) {
             handoff_engine.process_external_message(kMidiTimingClock, pulse / 48.0);
         }
         CHECK(!handoff_engine.external_clock_active());
         CHECK(handoff_engine.playing());
+        CHECK(!handoff_engine.snapshot().external_clock_switch_pending);
     }
 
     void test_cleanup_overrun_and_validation() {
