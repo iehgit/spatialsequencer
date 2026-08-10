@@ -234,9 +234,7 @@ namespace spatial_midi {
                     if (!enabled && !before.midi_clock_active) {
                         status("MIDI Clock output enable cancelled");
                     } else {
-                        status(
-                            std::string("MIDI Clock output will ") + (enabled ? "enable" : "disable") +
-                            " at the next sixteenth-note boundary");
+                        status(std::string("MIDI Clock output will ") + (enabled ? "enable" : "disable"));
                     }
                 } else {
                     status(std::string("MIDI Clock output ") + (enabled ? "armed" : "disabled"));
@@ -593,7 +591,7 @@ namespace spatial_midi {
             disable_midi_clock_input();
             const auto transport = worker_.snapshot();
             status(transport.playing && transport.external_clock_active
-                       ? "MIDI Clock input will disable at the next sixteenth-note boundary"
+                       ? "MIDI Clock input will disable"
                        : "MIDI Clock input disabled");
             return;
         }
@@ -617,9 +615,8 @@ namespace spatial_midi {
             midi_clock_input_enabled_ = true;
             midi_clock_input_status_ = clock_input_connection_status_;
 
-            status(clock_input_connection_status_ + (worker_.snapshot().playing
-                                                   ? "; synchronizing to the next sixteenth-note boundary"
-                                                   : "; waiting for MIDI Clock/Start"));
+            status(clock_input_connection_status_ +
+                   (worker_.snapshot().playing ? "" : "; waiting for MIDI Clock/Start"));
         } catch (const std::exception &error) {
             clock_input_.reset();
             clock_input_connection_status_.clear();
