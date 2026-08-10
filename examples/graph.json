@@ -1,0 +1,208 @@
+{
+  "format": "spatial-midi-project",
+  "version": 1,
+  "bpm": 120,
+  "release_gap_eighths": 1,
+  "start_node_id": 1,
+  "nodes": [
+    {
+      "id": 1,
+      "x": 4,
+      "y": 1,
+      "pitches": [60, 64, 67, 69],
+      "velocity": 112,
+      "silenced": false,
+      "routing_mode": "random"
+    },
+    {
+      "id": 2,
+      "x": 8,
+      "y": 1,
+      "pitches": [59, 62, 67, 71],
+      "velocity": 98,
+      "silenced": false,
+      "routing_mode": "random"
+    },
+    {
+      "id": 3,
+      "x": 12,
+      "y": 1,
+      "pitches": [57, 60, 64, 67],
+      "velocity": 104,
+      "silenced": false,
+      "routing_mode": "random"
+    },
+    {
+      "id": 4,
+      "x": 16,
+      "y": 1,
+      "pitches": [53, 57, 60, 64],
+      "velocity": 106,
+      "silenced": false,
+      "routing_mode": "random"
+    },
+    {
+      "id": 5,
+      "x": 20,
+      "y": 1,
+      "pitches": [52, 55, 60, 64],
+      "velocity": 104,
+      "silenced": false,
+      "routing_mode": "random"
+    },
+    {
+      "id": 6,
+      "x": 24,
+      "y": 1,
+      "pitches": [53, 57, 62, 65],
+      "velocity": 108,
+      "silenced": false,
+      "routing_mode": "random"
+    },
+    {
+      "id": 7,
+      "x": 28,
+      "y": 1,
+      "pitches": [50, 53, 57, 60],
+      "velocity": 100,
+      "silenced": false,
+      "routing_mode": "random"
+    },
+    {
+      "id": 8,
+      "x": 32,
+      "y": 1,
+      "pitches": [55, 59, 62, 65],
+      "velocity": 114,
+      "silenced": false,
+      "routing_mode": "random"
+    },
+    {
+      "id": 9,
+      "x": 32,
+      "y": 5,
+      "type": "relay",
+      "routing_mode": "round_robin"
+    },
+    {
+      "id": 10,
+      "x": 32,
+      "y": 9,
+      "pitches": [60, 64, 67, 69],
+      "velocity": 114,
+      "silenced": false,
+      "routing_mode": "random"
+    },
+    {
+      "id": 11,
+      "x": 28,
+      "y": 5,
+      "pitches": [60, 64, 67, 71],
+      "velocity": 110,
+      "silenced": false,
+      "routing_mode": "random"
+    },
+    {
+      "id": 12,
+      "x": 28,
+      "y": 9,
+      "pitches": [52, 55, 59, 62],
+      "velocity": 98,
+      "silenced": false,
+      "routing_mode": "random"
+    },
+    {
+      "id": 13,
+      "x": 24,
+      "y": 9,
+      "pitches": [53, 57, 60, 64],
+      "velocity": 106,
+      "silenced": false,
+      "routing_mode": "random"
+    },
+    {
+      "id": 14,
+      "x": 20,
+      "y": 9,
+      "pitches": [52, 55, 60, 64],
+      "velocity": 100,
+      "silenced": false,
+      "routing_mode": "random"
+    },
+    {
+      "id": 15,
+      "x": 16,
+      "y": 9,
+      "pitches": [50, 53, 57, 60],
+      "velocity": 102,
+      "silenced": false,
+      "routing_mode": "random"
+    },
+    {
+      "id": 16,
+      "x": 12,
+      "y": 9,
+      "pitches": [55, 59, 62, 65],
+      "velocity": 114,
+      "silenced": false,
+      "routing_mode": "random"
+    },
+    {
+      "id": 17,
+      "x": 8,
+      "y": 9,
+      "pitches": [60, 64, 67, 69],
+      "velocity": 118,
+      "silenced": false,
+      "routing_mode": "random"
+    },
+    {
+      "id": 18,
+      "x": 4,
+      "y": 9,
+      "pitches": [55, 62],
+      "velocity": 112,
+      "silenced": false,
+      "routing_mode": "random"
+    },
+    {
+      "id": 19,
+      "x": 4,
+      "y": 7,
+      "pitches": [60],
+      "velocity": 100,
+      "silenced": true,
+      "routing_mode": "random"
+    },
+    {
+      "id": 20,
+      "x": 4,
+      "y": 5,
+      "type": "relay",
+      "routing_mode": "random"
+    }
+  ],
+  "edges": [
+    {"source_id": 1, "target_id": 2},
+    {"source_id": 2, "target_id": 3},
+    {"source_id": 3, "target_id": 4},
+    {"source_id": 4, "target_id": 5},
+    {"source_id": 5, "target_id": 6},
+    {"source_id": 6, "target_id": 7},
+    {"source_id": 7, "target_id": 8},
+    {"source_id": 8, "target_id": 9},
+    {"source_id": 9, "target_id": 10},
+    {"source_id": 9, "target_id": 11},
+    {"source_id": 10, "target_id": 12},
+    {"source_id": 11, "target_id": 12},
+    {"source_id": 12, "target_id": 13},
+    {"source_id": 13, "target_id": 14},
+    {"source_id": 14, "target_id": 15},
+    {"source_id": 15, "target_id": 16},
+    {"source_id": 16, "target_id": 17},
+    {"source_id": 17, "target_id": 18},
+    {"source_id": 18, "target_id": 19},
+    {"source_id": 19, "target_id": 20},
+    {"source_id": 20, "target_id": 1}
+  ]
+}
