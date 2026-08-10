@@ -168,33 +168,27 @@ namespace spatial_midi {
 
     void SequencerEngine::heap_push(std::vector<Event> &heap, Event event) {
         heap.push_back(std::move(event));
-        std::push_heap(heap.begin(), heap.end(), event_later);
+        std::ranges::push_heap(heap, event_later);
     }
 
     SequencerEngine::Event SequencerEngine::heap_pop(std::vector<Event> &heap) {
-        std::pop_heap(heap.begin(), heap.end(), event_later);
+        std::ranges::pop_heap(heap, event_later);
         Event event = std::move(heap.back());
         heap.pop_back();
         return event;
     }
 
     void SequencerEngine::heap_rebuild(std::vector<Event> &heap) {
-        std::make_heap(heap.begin(), heap.end(), event_later);
+        std::ranges::make_heap(heap, event_later);
     }
 
     void SequencerEngine::release_push(ArmedRelease release) {
         armed_clock_releases_.push_back(std::move(release));
-        std::push_heap(
-            armed_clock_releases_.begin(),
-            armed_clock_releases_.end(),
-            release_later);
+        std::ranges::push_heap(armed_clock_releases_, release_later);
     }
 
     SequencerEngine::ArmedRelease SequencerEngine::release_pop() {
-        std::pop_heap(
-            armed_clock_releases_.begin(),
-            armed_clock_releases_.end(),
-            release_later);
+        std::ranges::pop_heap(armed_clock_releases_, release_later);
         ArmedRelease release = std::move(armed_clock_releases_.back());
         armed_clock_releases_.pop_back();
         return release;
@@ -528,10 +522,7 @@ namespace spatial_midi {
         for (ArmedRelease &release: armed_clock_releases_) {
             release.real_deadline += paused_duration;
         }
-        std::make_heap(
-            armed_clock_releases_.begin(),
-            armed_clock_releases_.end(),
-            release_later);
+        std::ranges::make_heap(armed_clock_releases_, release_later);
 
         tempo_epoch_time_ += paused_duration;
         if (next_clock_pulse_index_) {
