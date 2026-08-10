@@ -63,7 +63,7 @@ namespace spatial_midi {
                 {
                     "F1: save project",
                     "F2: load project",
-                    "F5: reconnect MIDI output",
+                    "F5: reconnect MIDI I/O",
                     "R: set start node",
                     "M: toggle note/rest",
                     "Up/Down: first pitch semitone",

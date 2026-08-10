@@ -111,7 +111,7 @@ Only MIDI Note On messages with nonzero velocity on the configured note-input ch
 
 At all other times—including Running, Paused, Waiting for clock, and clock/error states—the received note is consumed without editing the project. Notes played during playback are not applied later after the transport stops.
 
-By default the note-entry input attempts to use the same ALSA port selected for MIDI output. `--midi-note-input-device` can select a different source, and `--midi-note-input-channel` selects its channel independently from the MIDI output channel. If the input source is missing or unavailable, the rest of the application continues normally.
+By default the note-entry input attempts to use the same ALSA port selected for MIDI output. `--midi-note-input-device` can select a different source, and `--midi-note-input-channel` selects its channel independently from the MIDI output channel. If the input source is missing or unavailable, the rest of the application continues normally. F5 independently retries MIDI output and note input; when the note source is implicit, it is resolved again from the newly connected output. MIDI Clock input is controlled separately with `I`.
 
 ## Pause, stop, and note cleanup
 

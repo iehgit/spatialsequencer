@@ -637,29 +637,68 @@ namespace spatial_midi {
 
     void SdlApp::start_note_input() {
         try {
-            const NoteInputOpenResult result = note_input_opener_();
-            note_input_ = result.backend;
-            if (!note_input_) {
+            const NoteInputOpenResult result = note_input_opener_(output_);
+            if (!result.backend) {
                 if (!result.status.empty()) {
                     status("MIDI note input unavailable: " + result.status, 5.0);
                 }
                 return;
             }
 
-            note_input_worker_ = std::make_unique<MidiNoteInputWorker>(
-                note_input_, note_input_channel_ - 1,
-                [this](const MidiNoteMessage &note) {
-                    SDL_Event event{};
-                    event.type = note_input_event_type_;
-                    event.user.code = (note.pitch & 0xff) | ((note.velocity & 0xff) << 8);
-                    if (SDL_PushEvent(&event) < 0) {
-                        throw std::runtime_error(std::string("SDL_PushEvent: ") + SDL_GetError());
-                    }
-                });
+            auto worker = make_note_input_worker(result.backend);
+            note_input_ = result.backend;
+            note_input_worker_ = std::move(worker);
         } catch (const std::exception &error) {
-            note_input_.reset();
             note_input_worker_.reset();
+            note_input_.reset();
             status("MIDI note input unavailable: " + std::string(error.what()), 5.0);
+        }
+    }
+
+    std::unique_ptr<MidiNoteInputWorker> SdlApp::make_note_input_worker(
+        const std::shared_ptr<MidiNoteInput> &input) {
+        return std::make_unique<MidiNoteInputWorker>(
+            input, note_input_channel_ - 1,
+            [this](const MidiNoteMessage &note) {
+                SDL_Event event{};
+                event.type = note_input_event_type_;
+                event.user.code = (note.pitch & 0xff) | ((note.velocity & 0xff) << 8);
+                if (SDL_PushEvent(&event) < 0) {
+                    throw std::runtime_error(std::string("SDL_PushEvent: ") + SDL_GetError());
+                }
+            });
+    }
+
+    std::string SdlApp::reconnect_note_input(const std::shared_ptr<MidiOutput> &source_output) {
+        if (note_input_worker_ && note_input_worker_->pop_failure()) {
+            note_input_worker_.reset();
+            note_input_.reset();
+            SDL_FlushEvent(note_input_event_type_);
+        }
+
+        const bool had_active_input = note_input_worker_ && note_input_;
+        try {
+            const NoteInputOpenResult result = note_input_opener_(source_output);
+            if (!result.backend) {
+                const std::string detail = result.status.empty() ? "no source available" : result.status;
+                return had_active_input
+                           ? "Note In: unchanged (" + detail + ')'
+                           : "Note In: unavailable (" + detail + ')';
+            }
+
+            auto replacement_input = result.backend;
+            auto replacement_worker = make_note_input_worker(replacement_input);
+
+            note_input_worker_.reset();
+            note_input_.reset();
+            SDL_FlushEvent(note_input_event_type_);
+            note_input_ = std::move(replacement_input);
+            note_input_worker_ = std::move(replacement_worker);
+            return "Note In: OK";
+        } catch (const std::exception &error) {
+            return had_active_input
+                       ? "Note In: unchanged (" + std::string(error.what()) + ')'
+                       : "Note In: unavailable (" + std::string(error.what()) + ')';
         }
     }
 
@@ -675,6 +714,7 @@ namespace spatial_midi {
 
         note_input_worker_.reset();
         note_input_.reset();
+        SDL_FlushEvent(note_input_event_type_);
         status("MIDI note input unavailable: " + *failure, 5.0);
     }
 
@@ -728,30 +768,35 @@ namespace spatial_midi {
     }
 
     void SdlApp::reconnect_midi() {
+        std::string output_result;
+        bool stopped_playback = false;
         try {
             OutputOpenResult result = output_opener_();
             if (!result.backend || !result.connected) {
-                status("Could not reconnect MIDI output: " + result.status, 5.0);
-                return;
-            }
+                output_result = "Out: failed (" + result.status + ')';
+            } else {
+                if (worker_.snapshot().playing) {
+                    // A backend cannot be replaced while notes may still be active
+                    // on the old destination. Reconnecting during playback therefore
+                    // performs the same all-notes-off cleanup as a device failure.
+                    worker_.emergency_stop();
+                    stopped_playback = true;
+                }
 
-            const bool stopped_playback = worker_.snapshot().playing;
-            if (stopped_playback) {
-                // A backend cannot be replaced while notes may still be active
-                // on the old destination. Reconnecting during playback therefore
-                // performs the same all-notes-off cleanup as a device failure.
-                worker_.emergency_stop();
+                worker_.set_midi_backend(result.backend);
+                output_ = std::move(result.backend);
+                midi_status_ = result.status;
+                output_result = "Out: OK";
             }
-
-            worker_.set_midi_backend(result.backend);
-            output_ = std::move(result.backend);
-            midi_status_ = result.status;
-            status(
-                "MIDI output reconnected: " + midi_status_ +
-                (stopped_playback ? "; playback stopped" : ""));
         } catch (const std::exception &error) {
-            status("Could not reconnect MIDI output: " + std::string(error.what()), 5.0);
+            output_result = "Out: failed (" + std::string(error.what()) + ')';
         }
+
+        const std::string note_input_result = reconnect_note_input(output_);
+        status(
+            "MIDI reconnect: " + output_result + "; " + note_input_result +
+            (stopped_playback ? "; playback stopped" : ""),
+            5.0);
     }
 
     void SdlApp::midi_failed(const std::string &message) {

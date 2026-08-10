@@ -99,7 +99,7 @@ Relevant command-line options:
 
 Without an explicit output destination, the application tries the first available ALSA destination. If no destination is available, it keeps a virtual ALSA output port that can be connected later. If ALSA output itself cannot be opened, the editor continues with no-op MIDI output.
 
-MIDI note entry is optional. Unless `--midi-note-input-device` is given, it tries to use the same ALSA port as MIDI output. If that port cannot provide input, note entry remains unavailable without affecting playback or MIDI output. While playback is stopped, a Note On on the configured note-input channel sets the selected musical node's first pitch and velocity. Other pitches in the node are preserved.
+MIDI note entry is optional. Unless `--midi-note-input-device` is given, it tries to use the same ALSA port as MIDI output. If that port cannot provide input, note entry remains unavailable without affecting playback or MIDI output. F5 retries both MIDI output and note input; an implicit note-input source is resolved again from the newly connected output. While playback is stopped, a Note On on the configured note-input channel sets the selected musical node's first pitch and velocity. Other pitches in the node are preserved.
 
 ## Controls
 
@@ -136,7 +136,7 @@ MIDI note entry is optional. Unless `--midi-note-input-device` is given, it trie
 | `I` | Toggle MIDI Clock input; live handoff aligns to sixteenth-note boundaries |
 | F1 | Save the project to the configured JSON file |
 | F2 | Load and validate the configured JSON project, stopping current playback |
-| F5 | Reconnect the configured or default MIDI output |
+| F5 | Reconnect MIDI output and note-entry input |
 | Escape | Cancel edge connect/disconnect mode |
 | `H` | Toggle the help panel |
 

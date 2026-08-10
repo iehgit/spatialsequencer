@@ -20,6 +20,7 @@ namespace {
     using spatial_midi::AlsaMidiOutput;
     using spatial_midi::AlsaPortAddress;
     using spatial_midi::ClockInputOpenResult;
+    using spatial_midi::MidiOutput;
     using spatial_midi::NoteInputOpenResult;
     using spatial_midi::NullMidiOutput;
     using spatial_midi::OutputOpenResult;
@@ -233,13 +234,13 @@ int main(int argc, char **argv) {
         OutputOpenResult opened = output_opener();
         std::cout << opened.status << '\n';
 
-        std::optional<AlsaPortAddress> note_input_source = options.note_input;
-        if (!note_input_source) {
-            if (const auto alsa_output = std::dynamic_pointer_cast<AlsaMidiOutput>(opened.backend)) {
-                note_input_source = alsa_output->connected_destination();
+        const auto note_input_opener = [selected = options.note_input](const std::shared_ptr<MidiOutput> &output) {
+            std::optional<AlsaPortAddress> source = selected;
+            if (!source) {
+                if (const auto alsa_output = std::dynamic_pointer_cast<AlsaMidiOutput>(output)) {
+                    source = alsa_output->connected_destination();
+                }
             }
-        }
-        const auto note_input_opener = [source = note_input_source] {
             return open_note_input(source);
         };
 

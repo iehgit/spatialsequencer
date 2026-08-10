@@ -36,7 +36,7 @@ namespace spatial_midi {
     public:
         using OutputOpener = std::function<OutputOpenResult()>;
         using ClockInputOpener = std::function<ClockInputOpenResult()>;
-        using NoteInputOpener = std::function<NoteInputOpenResult()>;
+        using NoteInputOpener = std::function<NoteInputOpenResult(const std::shared_ptr<MidiOutput> &)>;
 
         SdlApp(TransportWorker &worker, std::shared_ptr<MidiOutput> output, std::string midi_status,
                OutputOpener output_opener, ClockInputOpener clock_input_opener, NoteInputOpener note_input_opener,
@@ -129,6 +129,11 @@ namespace spatial_midi {
         void consume_note_input_failure();
 
         void start_note_input();
+
+        [[nodiscard]] std::unique_ptr<MidiNoteInputWorker> make_note_input_worker(
+            const std::shared_ptr<MidiNoteInput> &input);
+
+        [[nodiscard]] std::string reconnect_note_input(const std::shared_ptr<MidiOutput> &source_output);
 
         void handle_midi_note_entry(int pitch, int velocity);
 

@@ -77,6 +77,17 @@ namespace {
         std::size_t next_ = 0;
     };
 
+    class FailingNoteInput final : public MidiNoteInput {
+    public:
+        [[nodiscard]] std::string description() const override {
+            return "Failing note input";
+        }
+
+        std::optional<MidiNoteMessage> read_note(std::chrono::milliseconds) override {
+            throw std::runtime_error("simulated note input failure");
+        }
+    };
+
     class FakeMidi final : public MidiOutput {
     public:
         [[nodiscard]] std::string description() const override {
@@ -841,6 +852,17 @@ namespace {
             CHECK(received.front().channel == 0);
         }
         worker.close();
+
+        auto failing_input = std::make_shared<FailingNoteInput>();
+        MidiNoteInputWorker failing_worker(failing_input, 0, [](const MidiNoteMessage &) {});
+        std::optional<std::string> failure;
+        for (int attempt = 0; attempt < 100 && !failure; ++attempt) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            failure = failing_worker.pop_failure();
+        }
+        CHECK(failure.has_value());
+        CHECK(*failure == "simulated note input failure");
+        failing_worker.close();
     }
 
     void test_transport_worker() {
