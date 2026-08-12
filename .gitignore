@@ -20,6 +20,9 @@ Testing/
 *.exe
 /spatial-midi
 /spatial-midi-tests
+/dist/
+/_CPack_Packages/
+*.deb
 
 # IDE and editor files
 .idea/

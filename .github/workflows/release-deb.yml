@@ -1,0 +1,135 @@
+name: Build Debian release package
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing MAJOR.MINOR.PATCH release tag
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    container:
+      image: debian:12-slim
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Install build and packaging tools
+        run: |
+          apt-get update
+          apt-get install --yes --no-install-recommends \
+            ca-certificates \
+            cmake \
+            dpkg-dev \
+            g++ \
+            gh \
+            git \
+            libasound2-dev \
+            libsdl2-dev \
+            libsdl2-ttf-dev \
+            ninja-build \
+            pkg-config
+
+      - name: Check out release tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.tag }}
+
+      - name: Validate release tag
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          if [[ ! "${RELEASE_TAG}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tag must have the form MAJOR.MINOR.PATCH" >&2
+            exit 1
+          fi
+
+          tag_commit="$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")"
+          head_commit="$(git rev-parse HEAD)"
+          if [[ "${tag_commit}" != "${head_commit}" ]]; then
+            echo "Checked-out commit does not match tag ${RELEASE_TAG}" >&2
+            exit 1
+          fi
+
+      - name: Configure
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          package_maintainer="$(git log -1 --format='%an <%ae>')"
+          if [[ -z "${package_maintainer}" ]]; then
+            echo "Could not determine the package maintainer from the tagged commit" >&2
+            exit 1
+          fi
+
+          cmake -S . -B build-deb -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSPATIAL_MIDI_ENABLE_DEB_PACKAGING=ON \
+            -DSPATIAL_MIDI_PACKAGE_VERSION="${RELEASE_TAG}" \
+            -DCPACK_DEBIAN_PACKAGE_MAINTAINER="${package_maintainer}" \
+            -DCPACK_DEBIAN_PACKAGE_HOMEPAGE="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+
+      - name: Build and test
+        run: |
+          cmake --build build-deb --parallel
+          ctest --test-dir build-deb --output-on-failure
+
+      - name: Create Debian package
+        run: |
+          mkdir -p dist
+          export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          cpack --config build-deb/CPackConfig.cmake -G DEB -B dist
+
+      - name: Verify Debian package
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          shopt -s nullglob
+          packages=(dist/*.deb)
+          if (( ${#packages[@]} != 1 )); then
+            echo "Expected one Debian package, found ${#packages[@]}" >&2
+            exit 1
+          fi
+
+          package="${packages[0]}"
+          test "$(dpkg-deb --field "${package}" Package)" = "spatial-midi"
+          test "$(dpkg-deb --field "${package}" Version)" = "${RELEASE_TAG}-1"
+
+          contents="$(dpkg-deb --contents "${package}")"
+          grep -Fq './usr/bin/spatial-midi' <<<"${contents}"
+          grep -Fq './usr/share/doc/spatial-midi/README.md' <<<"${contents}"
+          grep -Fq './usr/share/doc/spatial-midi/MIDI.md' <<<"${contents}"
+          grep -Fq './usr/share/doc/spatial-midi/copyright' <<<"${contents}"
+          grep -Fq './usr/share/doc/spatial-midi/examples/graph.json' <<<"${contents}"
+
+          dpkg-deb --info "${package}"
+          dpkg-deb --contents "${package}"
+
+      - name: Attach package to draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          shopt -s nullglob
+          packages=(dist/*.deb)
+
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            if [[ "$(gh release view "${RELEASE_TAG}" --json isDraft --jq .isDraft)" != "true" ]]; then
+              echo "Release ${RELEASE_TAG} is already published" >&2
+              exit 1
+            fi
+            gh release upload "${RELEASE_TAG}" "${packages[@]}" --clobber
+          else
+            gh release create "${RELEASE_TAG}" "${packages[@]}" \
+              --draft \
+              --generate-notes \
+              --title "${RELEASE_TAG}" \
+              --verify-tag
+          fi
