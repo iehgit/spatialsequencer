@@ -164,7 +164,9 @@ namespace spatial_midi {
 
     RoutingMode TransportWorker::toggle_routing_mode(int node_id) {
         return submit([this, node_id] {
-            return engine_.toggle_routing_mode(node_id);
+            const RoutingMode mode = engine_.toggle_routing_mode(node_id);
+            publish_snapshot(true);
+            return mode;
         });
     }
 
@@ -248,7 +250,7 @@ namespace spatial_midi {
                     }
 
                     command();
-                    publish_snapshot(true);
+                    publish_snapshot(false);
                 }
 
                 {
