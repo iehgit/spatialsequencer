@@ -28,6 +28,7 @@ jobs:
             ca-certificates \
             cmake \
             dpkg-dev \
+            file \
             g++ \
             gh \
             git \
