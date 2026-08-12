@@ -43,6 +43,9 @@ jobs:
           fetch-depth: 0
           ref: ${{ inputs.tag }}
 
+      - name: Trust checked-out repository
+        run: git config --system --add safe.directory "${GITHUB_WORKSPACE}"
+
       - name: Validate release tag
         env:
           RELEASE_TAG: ${{ inputs.tag }}
