@@ -99,8 +99,7 @@ namespace spatial_midi {
 
     class AlsaMidiNoteInput final : public MidiNoteInput {
     public:
-        explicit AlsaMidiNoteInput(AlsaPortAddress source,
-                                   const std::string &client_name = "Spatial MIDI Note Input");
+        explicit AlsaMidiNoteInput(AlsaPortAddress source, const std::string &client_name = "Spatial MIDI Note Input");
         ~AlsaMidiNoteInput() override;
         AlsaMidiNoteInput(const AlsaMidiNoteInput &) = delete;
         AlsaMidiNoteInput &operator=(const AlsaMidiNoteInput &) = delete;

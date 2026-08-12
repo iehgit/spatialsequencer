@@ -862,11 +862,7 @@ namespace spatial_midi {
         }
     }
 
-    void SdlApp::draw_square_outline(
-        Point center,
-        int half_size,
-        int thickness,
-        SDL_Color color) {
+    void SdlApp::draw_square_outline(Point center, int half_size, int thickness, SDL_Color color) {
         set_color(renderer_, color);
         for (int layer = 0; layer < thickness; ++layer) {
             const int radius = half_size - layer;

@@ -81,14 +81,11 @@ namespace spatial_midi {
 
         [[nodiscard]] int edge_ticks(int source_id, std::optional<int> target_id = std::nullopt) const;
 
-        void save_json(const std::filesystem::path &path,
-                       const ProjectSettings &settings = {}) const;
+        void save_json(const std::filesystem::path &path, const ProjectSettings &settings = {}) const;
 
-        [[nodiscard]] static Graph load_json(const std::filesystem::path &path,
-                                             ProjectSettings *settings = nullptr);
+        [[nodiscard]] static Graph load_json(const std::filesystem::path &path, ProjectSettings *settings = nullptr);
 
-        [[nodiscard]] static Graph from_json(std::string_view json,
-                                             ProjectSettings *settings = nullptr);
+        [[nodiscard]] static Graph from_json(std::string_view json, ProjectSettings *settings = nullptr);
 
         [[nodiscard]] std::string to_json(const ProjectSettings &settings = {}) const;
 

@@ -13,8 +13,7 @@ namespace spatial_midi {
         constexpr std::size_t kExternalEstimateMinPulses = 6;
         constexpr double kExternalResetGap = 0.5;
         constexpr double kExternalTimeoutMin = 2.0;
-        constexpr int kMidiClockPulsesPerQuarter =
-            kMidiClockPulsesPerSixteenth * 4;
+        constexpr int kMidiClockPulsesPerQuarter = kMidiClockPulsesPerSixteenth * 4;
         constexpr int kExternalTimeoutPulses = kMidiClockPulsesPerQuarter;
     }
 
@@ -145,9 +144,7 @@ namespace spatial_midi {
         return kind == EventKind::Trigger ? 2 : 1;
     }
 
-    bool SequencerEngine::event_later(
-        const Event &lhs,
-        const Event &rhs) noexcept {
+    bool SequencerEngine::event_later(const Event &lhs, const Event &rhs) noexcept {
         if (lhs.deadline != rhs.deadline) {
             return lhs.deadline > rhs.deadline;
         }
@@ -157,9 +154,7 @@ namespace spatial_midi {
         return lhs.sequence > rhs.sequence;
     }
 
-    bool SequencerEngine::release_later(
-        const ArmedRelease &lhs,
-        const ArmedRelease &rhs) noexcept {
+    bool SequencerEngine::release_later(const ArmedRelease &lhs, const ArmedRelease &rhs) noexcept {
         if (lhs.real_deadline != rhs.real_deadline) {
             return lhs.real_deadline > rhs.real_deadline;
         }
@@ -232,9 +227,7 @@ namespace spatial_midi {
             });
     }
 
-    void SequencerEngine::set_tempo(
-        double new_bpm,
-        std::optional<double> now) {
+    void SequencerEngine::set_tempo(double new_bpm, std::optional<double> now) {
         (void) sixteenth_seconds(new_bpm);
 
         const double change_time = now.value_or(monotonic_seconds());
@@ -285,9 +278,7 @@ namespace spatial_midi {
         return set_release_gap_eighths(release_gap_eighths + delta);
     }
 
-    bool SequencerEngine::toggle_midi_clock(
-        std::optional<bool> enabled,
-        std::optional<double> now) {
+    bool SequencerEngine::toggle_midi_clock(std::optional<bool> enabled, std::optional<double> now) {
         const bool new_state = enabled.value_or(!midi_clock_enabled);
         if (new_state == midi_clock_enabled) {
             return new_state;
@@ -326,9 +317,7 @@ namespace spatial_midi {
         return midi_clock_enabled;
     }
 
-    bool SequencerEngine::set_external_clock(
-        bool enabled,
-        std::optional<double> now) {
+    bool SequencerEngine::set_external_clock(bool enabled, std::optional<double> now) {
         if (enabled == external_clock_enabled) {
             return enabled;
         }
@@ -369,9 +358,7 @@ namespace spatial_midi {
         return enabled;
     }
 
-    bool SequencerEngine::force_internal_clock(
-        std::optional<double> now,
-        bool clock_lost) {
+    bool SequencerEngine::force_internal_clock(std::optional<double> now, bool clock_lost) {
         const double timestamp = now.value_or(monotonic_seconds());
         const bool was_playing = playing();
         const bool was_paused = state == TransportState::Paused;
@@ -416,8 +403,7 @@ namespace spatial_midi {
         midi = &midi_output;
     }
 
-    void SequencerEngine::reset_routing_counters(
-        std::optional<int> node_id) {
+    void SequencerEngine::reset_routing_counters(std::optional<int> node_id) {
         if (node_id) {
             counter_positions_.erase(*node_id);
         } else {
@@ -558,9 +544,7 @@ namespace spatial_midi {
         return true;
     }
 
-    int SequencerEngine::process(
-        std::optional<double> now,
-        int max_events) {
+    int SequencerEngine::process(std::optional<double> now, int max_events) {
         const double current_time = now.value_or(monotonic_seconds());
         if (max_events <= 0) {
             return 0;
@@ -661,10 +645,7 @@ namespace spatial_midi {
         return false;
     }
 
-    void SequencerEngine::process_event(
-        const Event &event,
-        double wire_time,
-        bool external) {
+    void SequencerEngine::process_event(const Event &event, double wire_time, bool external) {
         if (event.kind == EventKind::NoteOff) {
             release_event_pitches(event, wire_time);
         } else if (event.kind == EventKind::Trigger) {
@@ -680,9 +661,7 @@ namespace spatial_midi {
         }
     }
 
-    int SequencerEngine::process_external_message(
-        std::uint8_t status,
-        std::optional<double> now) {
+    int SequencerEngine::process_external_message(std::uint8_t status, std::optional<double> now) {
         if (!external_clock_enabled && !external_clock_active()) {
             return 0;
         }
@@ -955,10 +934,7 @@ namespace spatial_midi {
             edge->target_id);
     }
 
-    void SequencerEngine::trigger_node_external(
-        int node_id,
-        double trigger_pulse,
-        double wire_time) {
+    void SequencerEngine::trigger_node_external(int node_id, double trigger_pulse, double wire_time) {
         const Node *node = graph.find_node(node_id);
         if (!node) {
             finish_playback();
@@ -1015,9 +991,7 @@ namespace spatial_midi {
         push_clock_event(target, EventKind::Trigger, edge->target_id);
     }
 
-    std::optional<Edge> SequencerEngine::choose_outgoing_edge(
-        int node_id,
-        const std::vector<Edge> &outgoing) {
+    std::optional<Edge> SequencerEngine::choose_outgoing_edge(int node_id, const std::vector<Edge> &outgoing) {
         if (outgoing.empty()) {
             return std::nullopt;
         }
@@ -1041,10 +1015,7 @@ namespace spatial_midi {
         return outgoing[distribution(random_)];
     }
 
-    void SequencerEngine::sound_pitches(
-        const std::vector<int> &pitches,
-        int velocity,
-        double deadline) {
+    void SequencerEngine::sound_pitches(const std::vector<int> &pitches, int velocity, double deadline) {
         if (pitches.empty()) {
             return;
         }
@@ -1053,9 +1024,7 @@ namespace spatial_midi {
         active_pitches.insert(pitches.begin(), pitches.end());
     }
 
-    void SequencerEngine::release_event_pitches(
-        const Event &event,
-        double deadline) {
+    void SequencerEngine::release_event_pitches(const Event &event, double deadline) {
         if (!event.pitches.empty()) {
             midi->notes_off(event.pitches, 0, output_channel, deadline);
             for (int pitch: event.pitches) {
@@ -1148,8 +1117,7 @@ namespace spatial_midi {
         }
     }
 
-    void SequencerEngine::release_active_after_clock_loss(
-        double timestamp) noexcept {
+    void SequencerEngine::release_active_after_clock_loss(double timestamp) noexcept {
         try {
             if (!active_pitches.empty()) {
                 std::vector<int> pitches(
@@ -1174,9 +1142,7 @@ namespace spatial_midi {
         }
     }
 
-    void SequencerEngine::record_deadline_lateness(
-        double deadline,
-        double now) {
+    void SequencerEngine::record_deadline_lateness(double deadline, double now) {
         const double lateness = std::max(0.0, now - deadline);
         max_event_lateness = std::max(max_event_lateness, lateness);
         if (lateness > kMissedDeadlineSeconds) {
@@ -1303,9 +1269,7 @@ namespace spatial_midi {
                midi_clock_interval_seconds(bpm);
     }
 
-    void SequencerEngine::arm_clock_output_switch(
-        bool enabled,
-        double timestamp) {
+    void SequencerEngine::arm_clock_output_switch(bool enabled, double timestamp) {
         const double position = pulse_position_at(timestamp);
         const auto boundary = static_cast<std::int64_t>(
             (std::floor(

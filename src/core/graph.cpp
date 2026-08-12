@@ -571,9 +571,7 @@ namespace spatial_midi {
         return result;
     }
 
-    int Graph::edge_ticks(
-        int source_id,
-        std::optional<int> target_id) const {
+    int Graph::edge_ticks(int source_id, std::optional<int> target_id) const {
         require_node(source_id);
         Edge chosen{};
 
@@ -808,12 +806,7 @@ namespace spatial_midi {
         }
 
         Graph graph;
-        constexpr std::array positions{
-            std::array{2, 2},
-            std::array{6, 2},
-            std::array{6, 6},
-            std::array{2, 6},
-        };
+        constexpr std::array positions{std::array{2, 2}, std::array{6, 2}, std::array{6, 6}, std::array{2, 6},};
         constexpr std::array pitches{69, 72, 69, 71};
 
         std::vector<int> ids;

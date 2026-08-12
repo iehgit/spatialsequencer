@@ -652,8 +652,7 @@ namespace spatial_midi {
         }
     }
 
-    std::unique_ptr<MidiNoteInputWorker> SdlApp::make_note_input_worker(
-        const std::shared_ptr<MidiNoteInput> &input) {
+    std::unique_ptr<MidiNoteInputWorker> SdlApp::make_note_input_worker(const std::shared_ptr<MidiNoteInput> &input) {
         return std::make_unique<MidiNoteInputWorker>(
             input, note_input_channel_ - 1,
             [this](const MidiNoteMessage &note) {

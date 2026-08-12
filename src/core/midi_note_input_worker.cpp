@@ -9,10 +9,7 @@ namespace spatial_midi {
         constexpr auto kReadTimeout = std::chrono::milliseconds(50);
     }
 
-    MidiNoteInputWorker::MidiNoteInputWorker(
-        std::shared_ptr<MidiNoteInput> input,
-        int channel,
-        NoteHandler handler)
+    MidiNoteInputWorker::MidiNoteInputWorker(std::shared_ptr<MidiNoteInput> input, int channel, NoteHandler handler)
         : input_(std::move(input)), channel_(channel), handler_(std::move(handler)) {
         if (!input_) {
             throw std::invalid_argument("MIDI note input cannot be null");

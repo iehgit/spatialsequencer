@@ -25,11 +25,7 @@ namespace spatial_midi {
         constexpr double kSchedulingLead = 0.0;
     }
 
-    TransportWorker::TransportWorker(
-        Graph graph,
-        std::shared_ptr<MidiOutput> output,
-        double bpm,
-        int output_channel)
+    TransportWorker::TransportWorker(Graph graph, std::shared_ptr<MidiOutput> output, double bpm, int output_channel)
         : graph_(std::move(graph)),
           output_(require_output(std::move(output))),
           engine_(graph_, *output_, bpm, output_channel) {
@@ -128,17 +124,13 @@ namespace spatial_midi {
         });
     }
 
-    bool TransportWorker::toggle_midi_clock(
-        std::optional<bool> enabled,
-        std::optional<double> now) {
+    bool TransportWorker::toggle_midi_clock(std::optional<bool> enabled, std::optional<double> now) {
         return submit([this, enabled, now] {
             return engine_.toggle_midi_clock(enabled, now);
         });
     }
 
-    bool TransportWorker::set_external_clock(
-        bool enabled,
-        std::optional<double> now) {
+    bool TransportWorker::set_external_clock(bool enabled, std::optional<double> now) {
         return submit([this, enabled, now] {
             const bool result = engine_.set_external_clock(enabled, now);
             clock_input_enabled_ = result || engine_.external_clock_active();
