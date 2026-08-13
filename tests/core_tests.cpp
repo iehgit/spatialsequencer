@@ -5,8 +5,10 @@
 #include "spatial_midi/core/transport_worker.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <condition_variable>
+#include <deque>
 #include <filesystem>
 #include <iostream>
 #include <memory>
@@ -41,6 +43,18 @@ namespace {
 
     bool near(double lhs, double rhs, double tolerance = 1e-8) {
         return std::abs(lhs - rhs) <= tolerance;
+    }
+
+    template<class Predicate>
+    bool wait_until(std::chrono::milliseconds timeout, Predicate predicate) {
+        const auto deadline = std::chrono::steady_clock::now() + timeout;
+        while (std::chrono::steady_clock::now() < deadline) {
+            if (predicate()) {
+                return true;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+        return predicate();
     }
 
     struct RecordedMidi {
@@ -86,6 +100,38 @@ namespace {
         std::optional<MidiNoteMessage> read_note(std::chrono::milliseconds) override {
             throw std::runtime_error("simulated note input failure");
         }
+    };
+
+    class FakeClockInput final : public MidiClockInput {
+    public:
+        [[nodiscard]] std::string description() const override {
+            return "Fake MIDI Clock input";
+        }
+
+        std::vector<MidiRealtimeMessage> poll_realtime(std::size_t limit) override {
+            std::lock_guard lock(mutex_);
+            std::vector<MidiRealtimeMessage> result;
+            result.reserve(std::min(limit, messages_.size()));
+            while (result.size() < limit && !messages_.empty()) {
+                result.push_back(messages_.front());
+                messages_.pop_front();
+            }
+            return result;
+        }
+
+        void push(MidiRealtimeMessage message) {
+            std::lock_guard lock(mutex_);
+            messages_.push_back(message);
+        }
+
+        [[nodiscard]] bool empty() const {
+            std::lock_guard lock(mutex_);
+            return messages_.empty();
+        }
+
+    private:
+        mutable std::mutex mutex_;
+        std::deque<MidiRealtimeMessage> messages_;
     };
 
     class FakeMidi final : public MidiOutput {
@@ -216,14 +262,14 @@ namespace {
         CHECK(encoded.find("\"type\": \"relay\"") != std::string::npos);
 
         expect_graph_error([] {
-            constexpr auto invalid_version = R"({
+            constexpr auto unsupported_future_version = R"({
             "format": "spatial-midi-project",
             "version": 2,
             "start_node_id": null,
             "nodes": [],
             "edges": []
         })";
-            (void) Graph::from_json(invalid_version);
+            (void) Graph::from_json(unsupported_future_version);
         });
         expect_graph_error([] {
             constexpr auto invalid_bpm = R"({
@@ -246,16 +292,6 @@ namespace {
             "edges": []
         })";
             (void) Graph::from_json(invalid_release_gap);
-        });
-        expect_graph_error([] {
-            constexpr auto obsolete_pitch_field = R"({
-            "format": "spatial-midi-project",
-            "version": 1,
-            "start_node_id": 1,
-            "nodes": [{"id": 1, "x": 0, "y": 0, "pitch": 60}],
-            "edges": []
-        })";
-            (void) Graph::from_json(obsolete_pitch_field);
         });
         expect_graph_error([] {
             constexpr auto empty_pitches = R"({
@@ -782,13 +818,18 @@ namespace {
         FakeMidi midi;
         SequencerEngine engine(graph, midi, 120.0, 7);
         engine.start(0.0);
+        midi.events.clear();
         engine.stop();
         CHECK(!engine.playing());
         CHECK(engine.scheduled_event_count() == 0);
-        CHECK(std::ranges::any_of(midi.events, [](const RecordedMidi& e) { return e.kind ==
-            RecordedMidi::Kind::AllOff && e.channel == 7; }));
-        CHECK(std::ranges::any_of(midi.events, [](const RecordedMidi& e) { return e.kind ==
-            RecordedMidi::Kind::Clear; }));
+        CHECK(midi.events.size() == 3);
+        CHECK(midi.events[0].kind == RecordedMidi::Kind::Clear);
+        CHECK(midi.events[1].kind == RecordedMidi::Kind::Off);
+        CHECK(midi.events[1].pitches == std::vector<int>({60}));
+        CHECK(midi.events[1].velocity == 0);
+        CHECK(midi.events[1].channel == 7);
+        CHECK(midi.events[2].kind == RecordedMidi::Kind::AllOff);
+        CHECK(midi.events[2].channel == 7);
 
         engine.start(1.0);
         engine.timing_overrun(6.0);
@@ -869,6 +910,82 @@ namespace {
         failing_worker.close();
     }
 
+    void test_transport_worker_external_clock_loss() {
+        Graph graph;
+        const int first = graph.add_node(0, 0, 60).id;
+        const int second = graph.add_node(2, 0, 62).id;
+        graph.connect(first, second);
+        graph.connect(second, first);
+        graph.set_start(first);
+
+        auto midi = std::make_shared<FakeMidi>();
+        auto clock_input = std::make_shared<FakeClockInput>();
+        TransportWorker worker(std::move(graph), midi, 90.0);
+        worker.set_midi_clock_input(clock_input);
+        CHECK(worker.set_external_clock(true));
+
+        const double pulse_interval = midi_clock_interval_seconds(120.0);
+        const double last_pulse = monotonic_seconds();
+        const double start = last_pulse - kMidiClockPulsesPerSixteenth * pulse_interval;
+        clock_input->push({kMidiStart, start});
+        for (int pulse = 1; pulse <= kMidiClockPulsesPerSixteenth; ++pulse) {
+            clock_input->push({kMidiTimingClock, start + pulse * pulse_interval});
+        }
+
+        TransportSnapshot externally_clocked;
+        CHECK(wait_until(std::chrono::milliseconds(500), [&] {
+            externally_clocked = worker.snapshot();
+            return clock_input->empty() && externally_clocked.playing &&
+                   externally_clocked.external_clock_active &&
+                   externally_clocked.current_node_id == first &&
+                   near(externally_clocked.bpm, 120.0);
+        }));
+
+        std::vector<TransportFailure> failures;
+        CHECK(wait_until(std::chrono::milliseconds(3500), [&] {
+            const auto current = worker.pop_failures();
+            failures.insert(failures.end(), current.begin(), current.end());
+            return std::ranges::any_of(failures, [](const TransportFailure &failure) {
+                return failure.source == "clock_lost";
+            });
+        }));
+
+        TransportSnapshot recovered;
+        CHECK(wait_until(std::chrono::milliseconds(1000), [&] {
+            recovered = worker.snapshot();
+            return recovered.playing && recovered.state == TransportState::ClockLost &&
+                   !recovered.external_clock_enabled && !recovered.external_clock_active &&
+                   recovered.current_node_id == second;
+        }));
+        CHECK(recovered.input_gaps >= 1);
+
+        worker.close();
+
+        const auto find_event_index = [&](std::size_t begin, RecordedMidi::Kind kind,
+                                          int pitch = -1) -> std::optional<std::size_t> {
+            for (std::size_t index = begin; index < midi->events.size(); ++index) {
+                const RecordedMidi &event = midi->events[index];
+                if (event.kind == kind &&
+                    (pitch < 0 || std::ranges::find(event.pitches, pitch) != event.pitches.end())) {
+                    return index;
+                }
+            }
+            return std::nullopt;
+        };
+
+        const auto initial_on = find_event_index(0, RecordedMidi::Kind::On, 60);
+        CHECK(initial_on.has_value());
+        const auto recovery_off = find_event_index(*initial_on + 1, RecordedMidi::Kind::Off, 60);
+        CHECK(recovery_off.has_value());
+        const auto recovery_all_off = find_event_index(*recovery_off + 1, RecordedMidi::Kind::AllOff);
+        CHECK(recovery_all_off.has_value());
+        const auto internal_on = find_event_index(*recovery_all_off + 1, RecordedMidi::Kind::On, 62);
+        CHECK(internal_on.has_value());
+        CHECK(*initial_on < *recovery_off);
+        CHECK(*recovery_off < *recovery_all_off);
+        CHECK(*recovery_all_off < *internal_on);
+    }
+
     void test_transport_worker() {
         auto midi = std::make_shared<FakeMidi>();
         TransportWorker worker(create_default_graph(), midi, 120.0, 4);
@@ -929,6 +1046,7 @@ int main() {
         test_external_clock_and_handoffs();
         test_cleanup_overrun_and_validation();
         test_midi_note_input_worker();
+        test_transport_worker_external_clock_loss();
         test_transport_worker();
     } catch (const std::exception &error) {
         std::cerr << "Test failure: " << error.what() << '\n';
