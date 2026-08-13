@@ -40,7 +40,6 @@ namespace spatial_midi {
         void send_realtime(std::uint8_t status, double deadline) override;
         void clear_scheduled() override;
         [[nodiscard]] int client_id() const noexcept;
-        [[nodiscard]] int port_id() const noexcept;
         [[nodiscard]] std::optional<AlsaPortAddress> connected_destination() const;
         [[nodiscard]] static std::vector<AlsaPortInfo> list_destinations();
         [[nodiscard]] static std::optional<AlsaPortAddress> parse_address(std::string_view text);

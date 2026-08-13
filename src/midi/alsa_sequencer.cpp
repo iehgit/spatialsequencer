@@ -245,10 +245,6 @@ namespace spatial_midi {
         return seq_ != nullptr ? snd_seq_client_id(seq_) : -1;
     }
 
-    int AlsaMidiOutput::port_id() const noexcept {
-        return port_;
-    }
-
     std::optional<AlsaPortAddress> AlsaMidiOutput::connected_destination() const {
         std::lock_guard lock(mutex_);
         return destination_;
