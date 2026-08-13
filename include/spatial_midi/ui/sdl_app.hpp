@@ -82,6 +82,7 @@ namespace spatial_midi {
             int rounded_bpm = 0;
             bool midi_clock_enabled = false;
             bool midi_clock_active = false;
+            bool external_clock_enabled = false;
             bool external_clock_active = false;
             TransportState transport_state = TransportState::Stopped;
             int release_gap_eighths = kDefaultReleaseGapEighths;
@@ -193,8 +194,6 @@ namespace spatial_midi {
         void draw_square_outline(Point center, int half_size, int thickness, SDL_Color color);
 
         void draw_filled_triangle(Point first, Point second, Point third, SDL_Color color);
-
-        void draw_cached(TextCache &cache, const std::string &text, SDL_Rect destination);
 
         StaticText make_text(TTF_Font *font, const std::string &text, SDL_Color color,
                              std::optional<SDL_Color> background = std::nullopt);

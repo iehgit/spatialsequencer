@@ -853,6 +853,7 @@ namespace spatial_midi {
             .temporary_status_visible = now < status_until_, .status_revision = status_revision_,
             .current_node_id = transport.current_node_id, .rounded_bpm = static_cast<int>(std::lround(transport.bpm)),
             .midi_clock_enabled = transport.midi_clock_enabled, .midi_clock_active = transport.midi_clock_active,
+            .external_clock_enabled = transport.external_clock_enabled,
             .external_clock_active = transport.external_clock_active, .transport_state = transport.state,
             .release_gap_eighths = transport.release_gap_eighths, .output_channel = transport.output_channel,
             .worker_alive = transport.worker_alive, .worker_responsive = transport.worker_responsive,

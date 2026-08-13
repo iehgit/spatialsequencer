@@ -900,13 +900,6 @@ namespace spatial_midi {
             renderer_, nullptr, vertices.data(), static_cast<int>(vertices.size()), nullptr, 0);
     }
 
-    void SdlApp::draw_cached(TextCache &cache, const std::string &text, SDL_Rect destination) {
-        const CachedText cached = cache.get(text);
-        destination.w = cached.width;
-        destination.h = cached.height;
-        SDL_RenderCopy(renderer_, cached.texture, nullptr, &destination);
-    }
-
     SdlApp::StaticText SdlApp::make_text(TTF_Font *font, const std::string &text, SDL_Color color,
                                          std::optional<SDL_Color> background) {
         SDL_Surface *surface = background
