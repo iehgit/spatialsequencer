@@ -53,20 +53,17 @@ namespace spatial_midi {
     }
 
     void TextCache::touch(std::unordered_map<std::string, Entry>::iterator it) {
-        recency_.erase(it->second.recency);
-        recency_.push_front(it->first);
+        recency_.splice(recency_.begin(), recency_, it->second.recency);
         it->second.recency = recency_.begin();
     }
 
     void TextCache::evict_if_needed() {
         while (entries_.size() > capacity_) {
-            const std::string key = recency_.back();
-            recency_.pop_back();
-
-            if (const auto it = entries_.find(key); it != entries_.end()) {
+            if (const auto it = entries_.find(recency_.back()); it != entries_.end()) {
                 SDL_DestroyTexture(it->second.texture);
                 entries_.erase(it);
             }
+            recency_.pop_back();
         }
     }
 }
