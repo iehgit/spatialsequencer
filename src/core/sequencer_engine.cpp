@@ -112,13 +112,6 @@ namespace spatial_midi {
             kExternalTimeoutPulses * external_pulse_period_);
     }
 
-    std::optional<double> SequencerEngine::last_external_pulse_time() const noexcept {
-        if (external_pulse_times_.empty()) {
-            return std::nullopt;
-        }
-        return external_pulse_times_.back();
-    }
-
     TransportSnapshot SequencerEngine::snapshot() const {
         return TransportSnapshot{
             .playing = playing(),

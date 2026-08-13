@@ -42,8 +42,6 @@ namespace spatial_midi {
 
         [[nodiscard]] double external_clock_timeout() const noexcept;
 
-        [[nodiscard]] std::optional<double> last_external_pulse_time() const noexcept;
-
         [[nodiscard]] TransportSnapshot snapshot() const;
 
         void set_tempo(double new_bpm, std::optional<double> now = std::nullopt);
