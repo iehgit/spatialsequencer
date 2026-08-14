@@ -337,6 +337,12 @@ namespace spatial_midi {
             }
         }
         help_lines_.clear();
+
+        if (cached_right_status_text_.texture) {
+            SDL_DestroyTexture(cached_right_status_text_.texture);
+        }
+        cached_right_status_text_ = {};
+        cached_right_status_values_.reset();
     }
 
 
@@ -558,7 +564,7 @@ namespace spatial_midi {
                 std::string label;
                 for (std::size_t index = 1; index < node.pitches.size(); ++index) {
                     if (index > 1) {
-                        label += "+";
+                        label += '+';
                     }
                     label += pitch_name(node.pitches[index]);
                 }
@@ -602,6 +608,56 @@ namespace spatial_midi {
         }
     }
 
+    SdlApp::RightStatusValues SdlApp::make_right_status_values(const TransportSnapshot &transport) const noexcept {
+        return {
+            .transport_state = transport.state,
+            .tempo_bpm = static_cast<int>(std::lround(transport.bpm)),
+            .release_gap_eighths = transport.release_gap_eighths,
+            .grid_scale = grid_scale_,
+            .midi_channel = transport.output_channel + 1,
+            .midi_clock_enabled = transport.midi_clock_enabled,
+            .midi_clock_active = transport.midi_clock_active,
+            .external_clock_enabled = transport.external_clock_enabled,
+            .external_clock_active = transport.external_clock_active,
+            .worker_alive = transport.worker_alive,
+            .worker_responsive = transport.worker_responsive,
+        };
+    }
+
+    std::string SdlApp::format_right_status(const RightStatusValues &values) {
+        std::string mode = transport_state_name(values.transport_state);
+        if (!values.worker_alive) {
+            mode = "Timing engine failed";
+        } else if (!values.worker_responsive) {
+            mode = "Timing engine unresponsive";
+        }
+
+        const char *clock = "Off";
+        if (values.external_clock_enabled || values.external_clock_active) {
+            clock = "In";
+        } else if (values.midi_clock_active) {
+            clock = "Out";
+        } else if (values.midi_clock_enabled) {
+            clock = "Armed";
+        }
+
+        std::string result;
+        result.reserve(128);
+        result += "State: ";
+        result += mode;
+        result += "   Tempo: ";
+        result += std::to_string(values.tempo_bpm);
+        result += " BPM   Clock: ";
+        result += clock;
+        result += "   Release Gap: ";
+        result += std::to_string(values.release_gap_eighths);
+        result += "/8   Grid: ";
+        result += std::to_string(values.grid_scale);
+        result += "x   MIDI Ch: ";
+        result += std::to_string(values.midi_channel);
+        return result;
+    }
+
     void SdlApp::draw_panels(const TransportSnapshot &transport, double now) {
         int width = 0;
         int height = 0;
@@ -626,32 +682,21 @@ namespace spatial_midi {
 
         draw_text(small_font_, visible_status(now), kText, 10, status_y + 7, false);
 
-        std::string mode = transport_state_name(transport.state);
-        if (!transport.worker_alive) {
-            mode = "Timing engine failed";
-        } else if (!transport.worker_responsive) {
-            mode = "Timing engine unresponsive";
+        const RightStatusValues right_values = make_right_status_values(transport);
+        if (!cached_right_status_values_ || *cached_right_status_values_ != right_values) {
+            StaticText replacement = make_text(font_, format_right_status(right_values), kMutedText);
+            if (cached_right_status_text_.texture) {
+                SDL_DestroyTexture(cached_right_status_text_.texture);
+            }
+            cached_right_status_text_ = replacement;
+            cached_right_status_values_ = right_values;
         }
 
-        std::string clock_state;
-        if (transport.external_clock_enabled || transport.external_clock_active) {
-            clock_state = "In";
-        } else if (transport.midi_clock_active) {
-            clock_state = "Out";
-        } else if (transport.midi_clock_enabled) {
-            clock_state = "Armed";
-        } else {
-            clock_state = "Off";
-        }
-
-        const std::string right =
-            "State: " + mode +
-            "   Tempo: " + std::to_string(static_cast<int>(std::lround(transport.bpm))) + " BPM" +
-            "   Clock: " + clock_state +
-            "   Release Gap: " + std::to_string(transport.release_gap_eighths) + "/8" +
-            "   Grid: " + std::to_string(grid_scale_) + "x" +
-            "   MIDI Ch: " + std::to_string(transport.output_channel + 1);
-        draw_text(font_, right, kMutedText, width - 10, status_y + 7, true);
+        const int right_x = std::max(10, width - 10 - cached_right_status_text_.width);
+        SDL_Rect destination{
+            right_x, status_y + 7, cached_right_status_text_.width, cached_right_status_text_.height,
+        };
+        SDL_RenderCopy(renderer_, cached_right_status_text_.texture, nullptr, &destination);
     }
 
     void SdlApp::draw_help(int top) {

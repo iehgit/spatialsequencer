@@ -7,6 +7,7 @@
 #include <SDL.h>
 #include <SDL_ttf.h>
 
+#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -62,6 +63,22 @@ namespace spatial_midi {
             SDL_Texture *texture = nullptr;
             int width = 0;
             int height = 0;
+        };
+
+        struct RightStatusValues {
+            TransportState transport_state = TransportState::Stopped;
+            int tempo_bpm = 0;
+            int release_gap_eighths = 0;
+            int grid_scale = 1;
+            int midi_channel = 1;
+            bool midi_clock_enabled = false;
+            bool midi_clock_active = false;
+            bool external_clock_enabled = false;
+            bool external_clock_active = false;
+            bool worker_alive = true;
+            bool worker_responsive = true;
+
+            friend bool operator==(const RightStatusValues &, const RightStatusValues &) = default;
         };
 
         // A typed snapshot of every value that can affect the rendered frame.
@@ -166,6 +183,10 @@ namespace spatial_midi {
 
         void draw_panels(const TransportSnapshot &transport, double now);
 
+        [[nodiscard]] RightStatusValues make_right_status_values(const TransportSnapshot &transport) const noexcept;
+
+        [[nodiscard]] static std::string format_right_status(const RightStatusValues &values);
+
         void draw_help(int top);
 
         [[nodiscard]] Point grid_to_screen(int x, int y) const;
@@ -232,6 +253,8 @@ namespace spatial_midi {
         std::unique_ptr<TextCache> edge_cache_;
         std::unique_ptr<TextCache> counter_edge_cache_;
         std::vector<std::vector<StaticText> > help_lines_;
+        std::optional<RightStatusValues> cached_right_status_values_;
+        StaticText cached_right_status_text_;
 
         double camera_x_ = 96.0;
         double camera_y_ = 96.0;
