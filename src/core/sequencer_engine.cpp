@@ -282,7 +282,14 @@ namespace spatial_midi {
 
     bool SequencerEngine::set_external_clock(bool enabled, std::optional<TimePoint> now) {
         if (enabled == external_clock_enabled) {
-            return enabled;
+            return external_clock_enabled;
+        }
+
+        // A clock-domain handoff is deliberately not reversible. The first
+        // request wins until its boundary is reached; callers can compare the
+        // returned intended state with their request to detect rejection.
+        if (external_switch_pending_) {
+            return external_clock_enabled;
         }
 
         const TimePoint timestamp = now.value_or(monotonic_now());
@@ -318,7 +325,7 @@ namespace spatial_midi {
                 state = TransportState::Running;
             }
         }
-        return enabled;
+        return external_clock_enabled;
     }
 
     bool SequencerEngine::force_internal_clock(std::optional<TimePoint> now, bool clock_lost) {
@@ -626,7 +633,6 @@ namespace spatial_midi {
 
         if (status == kMidiStart) {
             if (playing() && external_switch_pending_ == ExternalClockSwitch::ToExternal) {
-                record_external_pulse(timestamp);
                 switch_internal_to_external(timestamp);
             } else if (!playing()) {
                 start(timestamp);
@@ -646,7 +652,7 @@ namespace spatial_midi {
             return 0;
         }
 
-        record_external_pulse(timestamp);
+        record_external_clock_pulse(timestamp);
         if (!playing()) {
             return 0;
         }
@@ -1057,7 +1063,7 @@ namespace spatial_midi {
         }
     }
 
-    void SequencerEngine::record_external_pulse(TimePoint source_timestamp) {
+    void SequencerEngine::record_external_clock_pulse(TimePoint source_timestamp) {
         if (!external_pulse_times_.empty()) {
             const TimePoint previous = external_pulse_times_.back();
             if (source_timestamp < previous || source_timestamp - previous > kExternalResetGap) {

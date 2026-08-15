@@ -226,7 +226,10 @@ namespace spatial_midi {
             try {
                 const auto before = worker_.snapshot();
                 if (!before.midi_clock_enabled && midi_clock_input_enabled_) {
-                    disable_midi_clock_input();
+                    if (!disable_midi_clock_input()) {
+                        status("MIDI Clock input switch already in progress");
+                        return;
+                    }
                 }
 
                 const bool enabled = worker_.toggle_midi_clock();
@@ -588,7 +591,10 @@ namespace spatial_midi {
 
     void SdlApp::toggle_midi_clock_input() {
         if (midi_clock_input_enabled_) {
-            disable_midi_clock_input();
+            if (!disable_midi_clock_input()) {
+                status("MIDI Clock input switch already in progress");
+                return;
+            }
             const auto transport = worker_.snapshot();
             status(transport.playing && transport.external_clock_active
                        ? "MIDI Clock input will disable"
@@ -611,8 +617,12 @@ namespace spatial_midi {
             if (worker_.snapshot().midi_clock_enabled) {
                 worker_.toggle_midi_clock(false);
             }
-            worker_.set_external_clock(true);
-            midi_clock_input_enabled_ = true;
+            const bool intended_state = worker_.set_external_clock(true);
+            midi_clock_input_enabled_ = intended_state;
+            if (!intended_state) {
+                status("MIDI Clock input switch already in progress");
+                return;
+            }
             midi_clock_input_status_ = clock_input_connection_status_;
 
             status(clock_input_connection_status_ +
@@ -624,12 +634,19 @@ namespace spatial_midi {
         }
     }
 
-    void SdlApp::disable_midi_clock_input() {
-        if (midi_clock_input_enabled_) {
-            worker_.set_external_clock(false);
+    bool SdlApp::disable_midi_clock_input() {
+        if (!midi_clock_input_enabled_) {
+            return true;
         }
-        midi_clock_input_enabled_ = false;
+
+        const bool intended_state = worker_.set_external_clock(false);
+        midi_clock_input_enabled_ = intended_state;
+        if (intended_state) {
+            return false;
+        }
+
         midi_clock_input_status_ = "MIDI Clock input off";
+        return true;
     }
 
     void SdlApp::start_note_input() {

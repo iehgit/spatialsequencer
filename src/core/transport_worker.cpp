@@ -133,14 +133,19 @@ namespace spatial_midi {
 
     bool TransportWorker::set_external_clock(bool enabled, std::optional<TimePoint> now) {
         return submit([this, enabled, now] {
-            const bool result = engine_.set_external_clock(enabled, now);
-            clock_input_enabled_ = result || engine_.external_clock_active();
+            const bool previous_intended_state = engine_.external_clock_enabled;
+            const bool intended_state = engine_.set_external_clock(enabled, now);
+            clock_input_enabled_ = intended_state || engine_.external_clock_active();
 
-            const TimePoint timestamp = monotonic_now();
-            next_clock_input_poll_ = timestamp;
-            clock_watch_started_ = clock_input_enabled_ ? std::optional<TimePoint>{timestamp} : std::nullopt;
-            last_clock_arrival_.reset();
-            return result;
+            // Rejected and idempotent requests must not restart the watchdog or
+            // discard its most recent Clock arrival.
+            if (intended_state != previous_intended_state) {
+                const TimePoint timestamp = monotonic_now();
+                next_clock_input_poll_ = timestamp;
+                clock_watch_started_ = clock_input_enabled_ ? std::optional<TimePoint>{timestamp} : std::nullopt;
+                last_clock_arrival_.reset();
+            }
+            return intended_state;
         });
     }
 
@@ -156,6 +161,10 @@ namespace spatial_midi {
     }
 
     void TransportWorker::set_midi_clock_input(std::shared_ptr<MidiClockInput> input) {
+        if (!input) {
+            throw std::invalid_argument("MIDI Clock input cannot be null");
+        }
+
         submit([this, input = std::move(input)] {
             clock_input_ = input;
             next_clock_input_poll_ = monotonic_now();
@@ -332,6 +341,9 @@ namespace spatial_midi {
                     last_clock_arrival_ = watchdog_time;
                 }
                 if (message.status == kMidiStart) {
+                    // A new Start begins a fresh watchdog epoch. Pre-Start
+                    // Clock arrivals must not make it immediately overdue.
+                    last_clock_arrival_.reset();
                     clock_watch_started_ = watchdog_time;
                 }
             }

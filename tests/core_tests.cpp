@@ -475,7 +475,7 @@ namespace {
 
         FakeMidi external_midi;
         SequencerEngine external_engine(external_graph, external_midi, 120.0, 0, 0, 44);
-        external_engine.set_external_clock(true, at(0.0));
+        CHECK(external_engine.set_external_clock(true, at(0.0)));
         external_engine.process_external_message(kMidiStart, at(0.0));
         CHECK(note_on_pitches(external_midi) == std::vector<int>({65}));
         for (int pulse = 1; pulse <= kMidiClockPulsesPerSixteenth; ++pulse) {
@@ -596,7 +596,7 @@ namespace {
         external_graph.set_start(external_first);
         FakeMidi external_midi;
         SequencerEngine external_engine(external_graph, external_midi, 120.0);
-        external_engine.set_external_clock(true, at(0.0));
+        CHECK(external_engine.set_external_clock(true, at(0.0)));
         external_engine.process_external_message(kMidiStart, at(0.0));
         for (int pulse = 1; pulse <= 6; ++pulse) {
             external_engine.process_external_message(kMidiTimingClock, at(pulse / 48.0));
@@ -806,7 +806,7 @@ namespace {
         graph.set_start(first);
         FakeMidi midi;
         SequencerEngine engine(graph, midi, 120.0, 0, 1, 16);
-        engine.set_external_clock(true, at(0.0));
+        CHECK(engine.set_external_clock(true, at(0.0)));
         engine.process_external_message(kMidiStart, at(0.0));
         for (int pulse = 1; pulse <= 48; ++pulse) {
             engine.process_external_message(kMidiTimingClock, at(pulse / 48.0));
@@ -818,6 +818,48 @@ namespace {
         CHECK(!engine.playing());
         CHECK(first_event(midi, RecordedMidi::Kind::AllOff) != nullptr);
 
+        Graph start_handoff;
+        const int start_handoff_first = start_handoff.add_node(0, 0, 65).id;
+        const int start_handoff_second = start_handoff.add_node(4, 0, 67).id;
+        start_handoff.connect(start_handoff_first, start_handoff_second);
+        start_handoff.set_start(start_handoff_first);
+        const Seconds source_interval = midi_clock_interval(120.0);
+
+        // Start and the first Timing Clock commonly share a timestamp. Start
+        // must not become a duplicate tempo-estimator sample.
+        FakeMidi coincident_start_midi;
+        SequencerEngine coincident_start_engine(start_handoff, coincident_start_midi, 90.0, 0, 1, 18);
+        coincident_start_engine.start(at(0.0));
+        CHECK(coincident_start_engine.set_external_clock(true, at(0.010)));
+        const TimePoint coincident_start = at(0.020);
+        coincident_start_engine.process_external_message(kMidiStart, coincident_start);
+        CHECK(coincident_start_engine.external_clock_active());
+        for (int pulse = 0; pulse < 6; ++pulse) {
+            coincident_start_engine.process_external_message(
+                kMidiTimingClock, coincident_start + to_nanoseconds(pulse * source_interval));
+        }
+        CHECK(near(coincident_start_engine.bpm, 120.0, 5e-6));
+
+        // A Start between two Clock pulses is likewise transport-only and must
+        // not shorten the measured mean Clock interval.
+        FakeMidi interstitial_start_midi;
+        SequencerEngine interstitial_start_engine(start_handoff, interstitial_start_midi, 90.0, 0, 1, 19);
+        interstitial_start_engine.start(at(0.0));
+        CHECK(interstitial_start_engine.set_external_clock(true, at(0.010)));
+        const TimePoint first_clock = at(0.020);
+        for (int pulse = 0; pulse < 3; ++pulse) {
+            interstitial_start_engine.process_external_message(
+                kMidiTimingClock, first_clock + to_nanoseconds(pulse * source_interval));
+        }
+        interstitial_start_engine.process_external_message(
+            kMidiStart, first_clock + to_nanoseconds(2.5 * source_interval));
+        CHECK(interstitial_start_engine.external_clock_active());
+        for (int pulse = 3; pulse < 6; ++pulse) {
+            interstitial_start_engine.process_external_message(
+                kMidiTimingClock, first_clock + to_nanoseconds(pulse * source_interval));
+        }
+        CHECK(near(interstitial_start_engine.bpm, 120.0, 5e-6));
+
         Graph handoff;
         const int h1 = handoff.add_node(0, 0, 60).id;
         const int h2 = handoff.add_node(4, 0, 62).id;
@@ -826,15 +868,28 @@ namespace {
         FakeMidi handoff_midi;
         SequencerEngine handoff_engine(handoff, handoff_midi, 120.0, 0, 1, 17);
         handoff_engine.start(at(0.0));
-        handoff_engine.set_external_clock(true, at(0.010));
+        CHECK(handoff_engine.set_external_clock(true, at(0.010)));
+        CHECK(handoff_engine.snapshot().external_clock_switch_pending == ExternalClockSwitch::ToExternal);
+        // The first request wins: disabling is rejected while the handoff to
+        // external Clock is pending, and the returned value is the intended state.
+        CHECK(handoff_engine.set_external_clock(false, at(0.011)));
+        CHECK(handoff_engine.external_clock_enabled);
         CHECK(handoff_engine.snapshot().external_clock_switch_pending == ExternalClockSwitch::ToExternal);
         for (int pulse = 1; pulse <= 6; ++pulse) {
             handoff_engine.process_external_message(kMidiTimingClock, at(pulse / 48.0));
         }
         CHECK(handoff_engine.external_clock_active());
         CHECK(!handoff_engine.snapshot().external_clock_switch_pending);
-        handoff_engine.set_external_clock(false, at(0.126));
+        CHECK(!handoff_engine.set_external_clock(false, at(0.126)));
         CHECK(handoff_engine.snapshot().external_clock_switch_pending == ExternalClockSwitch::ToInternal);
+        const std::size_t events_before_rejected_enable = handoff_engine.scheduled_event_count();
+        // Re-enabling is likewise rejected until the external-to-internal
+        // handoff completes. Its event queues must remain untouched.
+        CHECK(!handoff_engine.set_external_clock(true, at(0.127)));
+        CHECK(!handoff_engine.external_clock_enabled);
+        CHECK(handoff_engine.external_clock_active());
+        CHECK(handoff_engine.snapshot().external_clock_switch_pending == ExternalClockSwitch::ToInternal);
+        CHECK(handoff_engine.scheduled_event_count() == events_before_rejected_enable);
         for (int pulse = 7; pulse <= 12; ++pulse) {
             handoff_engine.process_external_message(kMidiTimingClock, at(pulse / 48.0));
         }
@@ -1007,6 +1062,39 @@ namespace {
         CHECK(*recovery_all_off < *internal_on);
     }
 
+    void test_transport_worker_start_resets_stale_clock_watchdog() {
+        Graph graph;
+        const int first = graph.add_node(0, 0, 60).id;
+        const int second = graph.add_node(2, 0, 62).id;
+        graph.connect(first, second);
+        graph.connect(second, first);
+        graph.set_start(first);
+
+        auto midi = std::make_shared<FakeMidi>();
+        auto clock_input = std::make_shared<FakeClockInput>();
+        TransportWorker worker(std::move(graph), midi, 120.0);
+        worker.set_midi_clock_input(clock_input);
+        CHECK(worker.set_external_clock(true));
+
+        // Simulate a Clock pulse retained from a previous, long-stopped run.
+        clock_input->push({kMidiTimingClock, monotonic_now() - 3s});
+        CHECK(wait_until(500ms, [&] { return clock_input->empty(); }));
+
+        clock_input->push({kMidiStart, monotonic_now()});
+        TransportSnapshot started;
+        CHECK(wait_until(500ms, [&] {
+            started = worker.snapshot();
+            return clock_input->empty() && started.playing && started.external_clock_enabled &&
+                   started.external_clock_active && started.state == TransportState::Running;
+        }));
+
+        const auto failures = worker.pop_failures();
+        CHECK(std::ranges::none_of(failures, [](const TransportFailure &failure) {
+            return failure.source == "clock_lost";
+        }));
+        worker.close();
+    }
+
     void test_transport_worker() {
         auto midi = std::make_shared<FakeMidi>();
         TransportWorker worker(create_default_graph(), midi, 120.0, 4);
@@ -1051,6 +1139,12 @@ namespace {
         CHECK(worker.pause());
         CHECK(!worker.set_node_from_midi(node_id, 73, 93));
         worker.stop();
+
+        // The worker forwards the intended state immediately, without waiting
+        // for the six-pulse handoff. The contradictory disable is rejected.
+        worker.start();
+        CHECK(worker.set_external_clock(true));
+        CHECK(worker.set_external_clock(false));
         worker.close();
     }
 }
@@ -1068,6 +1162,7 @@ int main() {
         test_cleanup_overrun_and_validation();
         test_midi_note_input_worker();
         test_transport_worker_external_clock_loss();
+        test_transport_worker_start_resets_stale_clock_watchdog();
         test_transport_worker();
     } catch (const std::exception &error) {
         std::cerr << "Test failure: " << error.what() << '\n';

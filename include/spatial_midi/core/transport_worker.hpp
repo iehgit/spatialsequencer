@@ -60,7 +60,9 @@ namespace spatial_midi {
 
         bool toggle_midi_clock(std::optional<bool> enabled = std::nullopt, std::optional<TimePoint> now = std::nullopt);
 
-        bool set_external_clock(bool enabled, std::optional<TimePoint> now = std::nullopt);
+        // Returns the engine's resulting intended state immediately; compare it
+        // with `enabled` to determine whether the request was accepted.
+        [[nodiscard]] bool set_external_clock(bool enabled, std::optional<TimePoint> now = std::nullopt);
 
         void set_midi_backend(std::shared_ptr<MidiOutput> output);
 

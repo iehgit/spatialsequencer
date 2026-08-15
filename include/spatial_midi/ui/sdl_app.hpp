@@ -139,7 +139,7 @@ namespace spatial_midi {
 
         void toggle_midi_clock_input();
 
-        void disable_midi_clock_input();
+        [[nodiscard]] bool disable_midi_clock_input();
 
         void consume_transport_failures();
 

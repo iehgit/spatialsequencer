@@ -51,7 +51,9 @@ namespace spatial_midi {
 
         bool toggle_midi_clock(std::optional<bool> enabled = std::nullopt, std::optional<TimePoint> now = std::nullopt);
 
-        bool set_external_clock(bool enabled, std::optional<TimePoint> now = std::nullopt);
+        // Returns the resulting intended state. A contradictory request made
+        // during a pending handoff is rejected and returns the earlier intent.
+        [[nodiscard]] bool set_external_clock(bool enabled, std::optional<TimePoint> now = std::nullopt);
 
         bool force_internal_clock(std::optional<TimePoint> now = std::nullopt, bool clock_lost = false);
 
@@ -184,7 +186,8 @@ namespace spatial_midi {
 
         void record_deadline_lateness(TimePoint deadline, TimePoint now);
 
-        void record_external_pulse(TimePoint source_timestamp);
+        // Tempo estimation accepts MIDI Timing Clock (0xF8) timestamps only.
+        void record_external_clock_pulse(TimePoint source_timestamp);
 
         int process_armed_clock_releases(TimePoint now, int limit);
 
