@@ -51,43 +51,23 @@ namespace spatial_midi {
         const std::array<std::vector<std::string>, 4> kHelpColumns{
             {
                 {
-                    "Click empty: create musical node",
-                    "Shift+click empty: create relay",
-                    "Click/drag node: select/move",
-                    "Middle-drag/WASD: pan",
-                    "Home: grid origin",
-                    "Z: toggle 1x/2x grid spacing",
-                    "H: toggle help",
-                    "Esc: cancel",
+                    "Click empty: create musical node", "Shift+click empty: create relay",
+                    "Click/drag node: select/move", "Middle-drag/WASD: pan", "Home: grid origin",
+                    "Z: toggle 1x/2x grid spacing", "H: toggle help", "Esc: cancel",
                 },
                 {
-                    "F1: save project",
-                    "F2: load project",
-                    "F5: reconnect MIDI I/O",
-                    "R: set start node",
-                    "M: toggle note/rest",
-                    "Up/Down: first pitch semitone",
-                    "Shift+Up/Down: first pitch octave",
+                    "F1: save project", "F2: load project", "F5: reconnect MIDI I/O", "R: set start node",
+                    "M: toggle note/rest", "Up/Down: first pitch semitone", "Shift+Up/Down: first pitch octave",
                     "Ctrl+Up/Down: last pitch semitone",
                 },
                 {
-                    "Ctrl+Shift+Up/Down: last pitch octave",
-                    "Left/Right: velocity -/+ 1",
-                    "Shift+Left/Right: velocity -/+ 10",
-                    "P: add pitch (up to 6)",
-                    "Shift+P: remove pitch (down to 1)",
-                    "C+click: add edge",
-                    "X+click: remove edge",
-                    "U: remove outgoing edges",
+                    "Ctrl+Shift+Up/Down: last pitch octave", "Left/Right: velocity -/+ 1",
+                    "Shift+Left/Right: velocity -/+ 10", "P: add pitch (up to 6)", "Shift+P: remove pitch (down to 1)",
+                    "C+click: add edge", "X+click: remove edge", "U: remove outgoing edges",
                 },
                 {
-                    "Delete: delete node",
-                    "O: Random/Round-robin",
-                    "Space: play/stop",
-                    "Enter/Pause: pause/resume",
-                    "[ / ]: tempo -/+ 5",
-                    ", / .: Release Gap -/+ 1/8 (0/8-4/8)",
-                    "K: toggle MIDI Clock output",
+                    "Delete: delete node", "O: Random/Round-robin", "Space: play/stop", "Enter/Pause: pause/resume",
+                    "[ / ]: tempo -/+ 5", ", / .: Release Gap -/+ 1/8 (0/8-4/8)", "K: toggle MIDI Clock output",
                     "I: toggle MIDI Clock input",
                 },
             }
@@ -110,10 +90,7 @@ namespace spatial_midi {
         }
 
         std::optional<std::filesystem::path> find_generic_system_font() {
-            std::vector<std::filesystem::path> roots{
-                "/usr/share/fonts",
-                "/usr/local/share/fonts",
-            };
+            std::vector<std::filesystem::path> roots{"/usr/share/fonts", "/usr/local/share/fonts",};
             if (const char *home = std::getenv("HOME")) {
                 roots.emplace_back(std::filesystem::path(home) / ".local/share/fonts");
                 roots.emplace_back(std::filesystem::path(home) / ".fonts");
@@ -346,7 +323,7 @@ namespace spatial_midi {
     }
 
 
-    void SdlApp::draw(const TransportSnapshot &transport, double now) {
+    void SdlApp::draw(const TransportSnapshot &transport, TimePoint now) {
         set_color(renderer_, kBackground);
         SDL_RenderClear(renderer_);
         draw_grid();
@@ -465,13 +442,9 @@ namespace spatial_midi {
                 const SDL_Color color = highlighted
                                             ? (counter ? kHighlightedCounterEdge : kHighlightedEdge)
                                             : (counter ? kCounterEdge : kEdge);
-                const int target_margin = is_relay(*target)
-                                              ? kRelayHalfSize + 4
-                                              : kNodeRadius + 4;
-                auto [points, direction] = orthogonal_edge_route(
-                    grid_to_screen(source->x, source->y),
-                    grid_to_screen(target->x, target->y),
-                    target_margin);
+                const int target_margin = is_relay(*target) ? kRelayHalfSize + 4 : kNodeRadius + 4;
+                auto [points, direction] = orthogonal_edge_route(grid_to_screen(source->x, source->y),
+                                                                 grid_to_screen(target->x, target->y), target_margin);
 
                 for (std::size_t index = 1; index < points.size(); ++index) {
                     draw_thick_line(points[index - 1], points[index], 3, color);
@@ -481,14 +454,10 @@ namespace spatial_midi {
                 }
 
                 const Point midpoint = polyline_midpoint(points);
-                const std::string ticks = std::to_string(
-                    graph_.edge_ticks(edge.source_id, edge.target_id));
+                const std::string ticks = std::to_string(graph_.edge_ticks(edge.source_id, edge.target_id));
                 const CachedText text = (counter ? *counter_edge_cache_ : *edge_cache_).get(ticks);
                 SDL_Rect destination{
-                    midpoint.x - text.width / 2,
-                    midpoint.y - text.height / 2,
-                    text.width,
-                    text.height,
+                    midpoint.x - text.width / 2, midpoint.y - text.height / 2, text.width, text.height,
                 };
                 SDL_RenderCopy(renderer_, text.texture, nullptr, &destination);
             }
@@ -514,9 +483,7 @@ namespace spatial_midi {
 
                 set_color(renderer_, kRelayFill);
                 SDL_Rect relay{
-                    center.x - kRelayHalfSize,
-                    center.y - kRelayHalfSize,
-                    kRelayHalfSize * 2 + 1,
+                    center.x - kRelayHalfSize, center.y - kRelayHalfSize, kRelayHalfSize * 2 + 1,
                     kRelayHalfSize * 2 + 1,
                 };
                 SDL_RenderFillRect(renderer_, &relay);
@@ -553,10 +520,7 @@ namespace spatial_midi {
             const int label_x = center.x + kNodeRadius + 6;
             const CachedText primary = pitch_cache_->get(pitch_name(node.pitches.front()));
             SDL_Rect primary_rect{
-                center.x - primary.width / 2,
-                center.y - primary.height / 2,
-                primary.width,
-                primary.height,
+                center.x - primary.width / 2, center.y - primary.height / 2, primary.width, primary.height,
             };
             SDL_RenderCopy(renderer_, primary.texture, nullptr, &primary_rect);
 
@@ -570,12 +534,7 @@ namespace spatial_midi {
                 }
 
                 const CachedText secondary = paraphonic_cache_->get(label);
-                SDL_Rect secondary_rect{
-                    label_x,
-                    center.y - 3 - secondary.height,
-                    secondary.width,
-                    secondary.height,
-                };
+                SDL_Rect secondary_rect{label_x, center.y - 3 - secondary.height, secondary.width, secondary.height,};
                 SDL_RenderCopy(renderer_, secondary.texture, nullptr, &secondary_rect);
             }
 
@@ -583,26 +542,15 @@ namespace spatial_midi {
             if (node.silenced) {
                 draw_circle_outline(center, kNodeRadius, 2, kRestBorder);
                 const int slash = static_cast<int>(std::lround(kNodeRadius * 0.55));
-                draw_thick_line(
-                    {center.x - slash, center.y - slash},
-                    {center.x + slash, center.y + slash},
-                    3,
-                    kRestBorder);
-                draw_thick_line(
-                    {center.x + slash, center.y - slash},
-                    {center.x - slash, center.y + slash},
-                    3,
-                    kRestBorder);
+                draw_thick_line({center.x - slash, center.y - slash}, {center.x + slash, center.y + slash}, 3,
+                                kRestBorder);
+                draw_thick_line({center.x + slash, center.y - slash}, {center.x - slash, center.y + slash}, 3,
+                                kRestBorder);
             }
 
             if (node.velocity != default_velocity_) {
                 const CachedText velocity = velocity_cache_->get(std::to_string(node.velocity));
-                SDL_Rect velocity_rect{
-                    label_x,
-                    center.y + 3,
-                    velocity.width,
-                    velocity.height,
-                };
+                SDL_Rect velocity_rect{label_x, center.y + 3, velocity.width, velocity.height,};
                 SDL_RenderCopy(renderer_, velocity.texture, nullptr, &velocity_rect);
             }
         }
@@ -610,16 +558,12 @@ namespace spatial_midi {
 
     SdlApp::RightStatusValues SdlApp::make_right_status_values(const TransportSnapshot &transport) const noexcept {
         return {
-            .transport_state = transport.state,
-            .tempo_bpm = static_cast<int>(std::lround(transport.bpm)),
-            .release_gap_eighths = transport.release_gap_eighths,
-            .grid_scale = grid_scale_,
-            .midi_channel = transport.output_channel + 1,
-            .midi_clock_enabled = transport.midi_clock_enabled,
+            .transport_state = transport.state, .tempo_bpm = static_cast<int>(std::lround(transport.bpm)),
+            .release_gap_eighths = transport.release_gap_eighths, .grid_scale = grid_scale_,
+            .midi_channel = transport.output_channel + 1, .midi_clock_enabled = transport.midi_clock_enabled,
             .midi_clock_active = transport.midi_clock_active,
             .external_clock_enabled = transport.external_clock_enabled,
-            .external_clock_active = transport.external_clock_active,
-            .worker_alive = transport.worker_alive,
+            .external_clock_active = transport.external_clock_active, .worker_alive = transport.worker_alive,
             .worker_responsive = transport.worker_responsive,
         };
     }
@@ -642,7 +586,7 @@ namespace spatial_midi {
         }
 
         std::string result;
-        result.reserve(128);
+        result.reserve(160);
         result += "State: ";
         result += mode;
         result += "   Tempo: ";
@@ -658,7 +602,7 @@ namespace spatial_midi {
         return result;
     }
 
-    void SdlApp::draw_panels(const TransportSnapshot &transport, double now) {
+    void SdlApp::draw_panels(const TransportSnapshot &transport, TimePoint now) {
         int width = 0;
         int height = 0;
         SDL_GetWindowSize(window_, &width, &height);
@@ -693,9 +637,7 @@ namespace spatial_midi {
         }
 
         const int right_x = std::max(10, width - 10 - cached_right_status_text_.width);
-        SDL_Rect destination{
-            right_x, status_y + 7, cached_right_status_text_.width, cached_right_status_text_.height,
-        };
+        SDL_Rect destination{right_x, status_y + 7, cached_right_status_text_.width, cached_right_status_text_.height,};
         SDL_RenderCopy(renderer_, cached_right_status_text_.texture, nullptr, &destination);
     }
 
@@ -760,8 +702,7 @@ namespace spatial_midi {
             const int dy = y - point.y;
 
             if (is_relay(node)) {
-                if (std::abs(dx) <= kRelayHalfSize + 4 &&
-                    std::abs(dy) <= kRelayHalfSize + 4) {
+                if (std::abs(dx) <= kRelayHalfSize + 4 && std::abs(dy) <= kRelayHalfSize + 4) {
                     return &node;
                 }
             } else if (dx * dx + dy * dy <= radius_squared) {
@@ -864,12 +805,8 @@ namespace spatial_midi {
             for (int offset = -thickness / 2; offset <= thickness / 2; ++offset) {
                 const int x_offset = static_cast<int>(std::lround(perpendicular_x * offset));
                 const int y_offset = static_cast<int>(std::lround(perpendicular_y * offset));
-                SDL_RenderDrawLine(
-                    renderer_,
-                    first.x + x_offset,
-                    first.y + y_offset,
-                    second.x + x_offset,
-                    second.y + y_offset);
+                SDL_RenderDrawLine(renderer_, first.x + x_offset, first.y + y_offset, second.x + x_offset,
+                                   second.y + y_offset);
             }
         }
     }
@@ -911,12 +848,7 @@ namespace spatial_midi {
         set_color(renderer_, color);
         for (int layer = 0; layer < thickness; ++layer) {
             const int radius = half_size - layer;
-            SDL_Rect rect{
-                center.x - radius,
-                center.y - radius,
-                radius * 2 + 1,
-                radius * 2 + 1,
-            };
+            SDL_Rect rect{center.x - radius, center.y - radius, radius * 2 + 1, radius * 2 + 1,};
             SDL_RenderDrawRect(renderer_, &rect);
         }
     }
@@ -924,25 +856,19 @@ namespace spatial_midi {
     void SdlApp::draw_filled_triangle(Point first, Point second, Point third, SDL_Color color) {
         const std::array<SDL_Vertex, 3> vertices{
             SDL_Vertex{
-                .position = {static_cast<float>(first.x), static_cast<float>(first.y)},
-                .color = color,
+                .position = {static_cast<float>(first.x), static_cast<float>(first.y)}, .color = color, .tex_coord = {},
+            },
+            SDL_Vertex{
+                .position = {static_cast<float>(second.x), static_cast<float>(second.y)}, .color = color,
                 .tex_coord = {},
             },
             SDL_Vertex{
-                .position = {static_cast<float>(second.x), static_cast<float>(second.y)},
-                .color = color,
-                .tex_coord = {},
-            },
-            SDL_Vertex{
-                .position = {static_cast<float>(third.x), static_cast<float>(third.y)},
-                .color = color,
-                .tex_coord = {},
+                .position = {static_cast<float>(third.x), static_cast<float>(third.y)}, .color = color, .tex_coord = {},
             },
         };
 
         // A failed geometry submission intentionally leaves the arrowhead undrawn.
-        (void) SDL_RenderGeometry(
-            renderer_, nullptr, vertices.data(), static_cast<int>(vertices.size()), nullptr, 0);
+        (void) SDL_RenderGeometry(renderer_, nullptr, vertices.data(), static_cast<int>(vertices.size()), nullptr, 0);
     }
 
     SdlApp::StaticText SdlApp::make_text(TTF_Font *font, const std::string &text, SDL_Color color,

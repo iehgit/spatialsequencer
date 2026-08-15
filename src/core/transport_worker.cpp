@@ -1,11 +1,14 @@
 #include "spatial_midi/core/transport_worker.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <exception>
 #include <stdexcept>
 
 namespace spatial_midi {
     namespace {
+        using namespace std::chrono_literals;
+
         std::shared_ptr<MidiOutput> require_output(std::shared_ptr<MidiOutput> output) {
             if (!output) {
                 throw std::invalid_argument("TransportWorker requires a MIDI output");
@@ -13,23 +16,22 @@ namespace spatial_midi {
             return output;
         }
 
-        constexpr double kInputPoll = 0.002;
-        constexpr double kIdleInputPoll = 0.020;
-        constexpr double kHeartbeat = 1.0;
-        constexpr double kUnresponsive = 5.0;
-        constexpr double kTimingOverrun = 5.0;
+        constexpr auto kInputPoll = 2ms;
+        constexpr auto kIdleInputPoll = 20ms;
+        constexpr auto kHeartbeat = 1s;
+        constexpr auto kUnresponsive = 5s;
+        constexpr auto kTimingOverrun = 5s;
 
         // Events remain in the engine until their exact deadlines so tempo changes,
         // pause/resume, clock handoffs, and graph edits can still rescale or cancel them.
         // ALSA receives absolute timestamps at dispatch, preserving same-deadline ordering.
-        constexpr double kSchedulingLead = 0.0;
+        constexpr auto kSchedulingLead = 0ns;
     }
 
     TransportWorker::TransportWorker(Graph graph, std::shared_ptr<MidiOutput> output, double bpm, int output_channel)
-        : graph_(std::move(graph)),
-          output_(require_output(std::move(output))),
+        : graph_(std::move(graph)), output_(require_output(std::move(output))),
           engine_(graph_, *output_, bpm, output_channel) {
-        const double now = monotonic_seconds();
+        const TimePoint now = monotonic_now();
         next_clock_input_poll_ = now;
         last_heartbeat_ = now;
         cached_snapshot_ = engine_.snapshot();
@@ -52,8 +54,7 @@ namespace spatial_midi {
         TransportSnapshot result = cached_snapshot_;
         const bool alive = worker_.joinable() && !closed_;
         result.worker_alive = alive;
-        result.worker_responsive =
-                alive && monotonic_seconds() - last_heartbeat_ <= kUnresponsive;
+        result.worker_responsive = alive && monotonic_now() - last_heartbeat_ <= kUnresponsive;
         return result;
     }
 
@@ -69,16 +70,16 @@ namespace spatial_midi {
         return result;
     }
 
-    void TransportWorker::start(std::optional<double> now) {
+    void TransportWorker::start(std::optional<TimePoint> now) {
         submit([this, now] {
             engine_.start(now);
             if (engine_.external_clock_active()) {
-                clock_watch_started_ = monotonic_seconds();
+                clock_watch_started_ = monotonic_now();
             }
         });
     }
 
-    bool TransportWorker::pause(std::optional<double> now) {
+    bool TransportWorker::pause(std::optional<TimePoint> now) {
         return submit([this, now] {
             const bool paused = engine_.pause(now);
             if (paused) {
@@ -89,11 +90,11 @@ namespace spatial_midi {
         });
     }
 
-    bool TransportWorker::resume(std::optional<double> now) {
+    bool TransportWorker::resume(std::optional<TimePoint> now) {
         return submit([this, now] {
             const bool resumed = engine_.resume(now);
             if (resumed && engine_.external_clock_active()) {
-                clock_watch_started_ = monotonic_seconds();
+                clock_watch_started_ = monotonic_now();
                 last_clock_arrival_.reset();
             }
             return resumed;
@@ -108,7 +109,7 @@ namespace spatial_midi {
         submit([this] { engine_.emergency_stop(); });
     }
 
-    void TransportWorker::set_tempo(double bpm, std::optional<double> now) {
+    void TransportWorker::set_tempo(double bpm, std::optional<TimePoint> now) {
         submit([this, bpm, now] { engine_.set_tempo(bpm, now); });
     }
 
@@ -124,21 +125,20 @@ namespace spatial_midi {
         });
     }
 
-    bool TransportWorker::toggle_midi_clock(std::optional<bool> enabled, std::optional<double> now) {
+    bool TransportWorker::toggle_midi_clock(std::optional<bool> enabled, std::optional<TimePoint> now) {
         return submit([this, enabled, now] {
             return engine_.toggle_midi_clock(enabled, now);
         });
     }
 
-    bool TransportWorker::set_external_clock(bool enabled, std::optional<double> now) {
+    bool TransportWorker::set_external_clock(bool enabled, std::optional<TimePoint> now) {
         return submit([this, enabled, now] {
             const bool result = engine_.set_external_clock(enabled, now);
             clock_input_enabled_ = result || engine_.external_clock_active();
 
-            const double timestamp = monotonic_seconds();
+            const TimePoint timestamp = monotonic_now();
             next_clock_input_poll_ = timestamp;
-            clock_watch_started_ =
-                    clock_input_enabled_ ? std::optional<double>{timestamp} : std::nullopt;
+            clock_watch_started_ = clock_input_enabled_ ? std::optional<TimePoint>{timestamp} : std::nullopt;
             last_clock_arrival_.reset();
             return result;
         });
@@ -158,7 +158,7 @@ namespace spatial_midi {
     void TransportWorker::set_midi_clock_input(std::shared_ptr<MidiClockInput> input) {
         submit([this, input = std::move(input)] {
             clock_input_ = input;
-            next_clock_input_poll_ = monotonic_seconds();
+            next_clock_input_poll_ = monotonic_now();
         });
     }
 
@@ -260,12 +260,12 @@ namespace spatial_midi {
                     }
                 }
 
-                const double now = monotonic_seconds();
+                const TimePoint now = monotonic_now();
                 service_transport(now);
                 if (clock_input_ && now >= next_clock_input_poll_) {
                     poll_midi_clock_input(now);
                 }
-                check_clock_watchdog(monotonic_seconds());
+                check_clock_watchdog(monotonic_now());
                 publish_snapshot(false);
 
                 std::unique_lock lock(condition_mutex_);
@@ -273,12 +273,8 @@ namespace spatial_midi {
                     continue;
                 }
 
-                condition_.wait_for(
-                    lock,
-                    stop_token,
-                    std::chrono::duration<double>(
-                        next_wait_timeout(monotonic_seconds())),
-                    [this] { return shutdown_ || !commands_.empty(); });
+                condition_.wait_for(lock, stop_token, next_wait_timeout(monotonic_now()),
+                                    [this] { return shutdown_ || !commands_.empty(); });
             }
         } catch (const std::exception &error) {
             record_failure("worker", error.what());
@@ -293,16 +289,14 @@ namespace spatial_midi {
         closed_ = true;
     }
 
-    void TransportWorker::service_transport(double now) {
+    void TransportWorker::service_transport(TimePoint now) {
         try {
-            if (const auto deadline = engine_.next_real_deadline();
-                deadline && now - *deadline > kTimingOverrun) {
-                const double lateness = now - *deadline;
+            if (const auto deadline = engine_.next_real_deadline(); deadline && now - *deadline > kTimingOverrun) {
+                const Nanoseconds lateness = now - *deadline;
                 engine_.timing_overrun(lateness);
-                record_failure(
-                    "timing_overrun",
-                    "Transport stopped after a " + std::to_string(lateness) +
-                    " s timing overrun");
+                record_failure("timing_overrun",
+                               "Transport stopped after a " + std::to_string(Seconds{lateness}.count()) +
+                               " s timing overrun");
                 return;
             }
 
@@ -316,8 +310,8 @@ namespace spatial_midi {
         }
     }
 
-    void TransportWorker::poll_midi_clock_input(double now) {
-        const double interval = clock_input_enabled_ ? kInputPoll : kIdleInputPoll;
+    void TransportWorker::poll_midi_clock_input(TimePoint now) {
+        const Nanoseconds interval = clock_input_enabled_ ? to_nanoseconds(kInputPoll) : to_nanoseconds(kIdleInputPoll);
         next_clock_input_poll_ = now + interval;
 
         try {
@@ -327,15 +321,13 @@ namespace spatial_midi {
             }
 
             for (const MidiRealtimeMessage &message: messages) {
-                (void) engine_.process_external_message(
-                    message.status,
-                    message.timestamp);
+                (void) engine_.process_external_message(message.status, message.timestamp);
 
                 // Kernel/device timestamps can be a fraction ahead of this poll's
                 // sampled `now` because the clocks are calibrated independently.
                 // Clamp only the watchdog reference; the engine receives the exact
                 // timestamp so Clock interval estimation remains meaningful.
-                const double watchdog_time = std::min(message.timestamp, now);
+                const TimePoint watchdog_time = std::min(message.timestamp, now);
                 if (message.status == kMidiTimingClock) {
                     last_clock_arrival_ = watchdog_time;
                 }
@@ -344,15 +336,13 @@ namespace spatial_midi {
                 }
             }
 
-            clock_input_enabled_ =
-                    engine_.external_clock_enabled || engine_.external_clock_active();
+            clock_input_enabled_ = engine_.external_clock_enabled || engine_.external_clock_active();
             if (!clock_input_enabled_) {
                 clock_watch_started_.reset();
                 last_clock_arrival_.reset();
             }
         } catch (const std::exception &error) {
-            const bool was_timing =
-                    clock_input_enabled_ || engine_.external_clock_active();
+            const bool was_timing = clock_input_enabled_ || engine_.external_clock_active();
             clock_input_.reset();
             clock_input_enabled_ = false;
             clock_watch_started_.reset();
@@ -365,19 +355,18 @@ namespace spatial_midi {
         }
     }
 
-    void TransportWorker::check_clock_watchdog(double now) {
+    void TransportWorker::check_clock_watchdog(TimePoint now) {
         if (!clock_input_enabled_ || !engine_.playing()) {
             return;
         }
 
-        const auto reference =
-                last_clock_arrival_ ? last_clock_arrival_ : clock_watch_started_;
+        const auto reference = last_clock_arrival_ ? last_clock_arrival_ : clock_watch_started_;
         if (!reference) {
             clock_watch_started_ = now;
             return;
         }
 
-        const double silence = now - *reference;
+        const Nanoseconds silence = now - *reference;
         if (silence <= engine_.external_clock_timeout()) {
             return;
         }
@@ -387,13 +376,11 @@ namespace spatial_midi {
         clock_input_enabled_ = false;
         clock_watch_started_.reset();
         last_clock_arrival_.reset();
-        record_failure(
-            "clock_lost",
-            "MIDI Clock silent for " + std::to_string(silence) + " s");
+        record_failure("clock_lost", "MIDI Clock silent for " + std::to_string(Seconds{silence}.count()) + " s");
     }
 
-    double TransportWorker::next_wait_timeout(double now) const {
-        double deadline = now + kHeartbeat;
+    Nanoseconds TransportWorker::next_wait_timeout(TimePoint now) const {
+        TimePoint deadline = now + kHeartbeat;
 
         if (const auto transport = engine_.next_real_deadline()) {
             deadline = std::min(deadline, *transport - kSchedulingLead);
@@ -402,16 +389,16 @@ namespace spatial_midi {
             deadline = std::min(deadline, next_clock_input_poll_);
         }
         if (clock_input_enabled_ && engine_.playing()) {
-            const auto reference =
-                    last_clock_arrival_ ? last_clock_arrival_ : clock_watch_started_;
+            const auto reference = last_clock_arrival_ ? last_clock_arrival_ : clock_watch_started_;
             if (reference) {
-                deadline = std::min(
-                    deadline,
-                    *reference + engine_.external_clock_timeout());
+                deadline = std::min(deadline, *reference + engine_.external_clock_timeout());
             }
         }
 
-        return std::clamp(deadline - now, 0.0, kHeartbeat);
+        if (deadline <= now) {
+            return Nanoseconds::zero();
+        }
+        return std::min(deadline - now, to_nanoseconds(kHeartbeat));
     }
 
     void TransportWorker::publish_snapshot(bool graph_changed) {
@@ -422,18 +409,16 @@ namespace spatial_midi {
         if (graph_changed) {
             cached_graph_ = graph_;
         }
-        last_heartbeat_ = monotonic_seconds();
+        last_heartbeat_ = monotonic_now();
     }
 
     void TransportWorker::record_failure(std::string source, std::string message) {
         std::lock_guard lock(snapshot_mutex_);
-        failures_.push_back(
-            TransportFailure{std::move(source), std::move(message)});
+        failures_.push_back(TransportFailure{std::move(source), std::move(message)});
     }
 
-    void TransportWorker::reconcile_graph_edit(
-        const std::vector<Edge> &before_edges,
-        const std::vector<std::pair<int, RoutingMode> > &before_modes) {
+    void TransportWorker::reconcile_graph_edit(const std::vector<Edge> &before_edges,
+                                               const std::vector<std::pair<int, RoutingMode> > &before_modes) {
         if (graph_.edges() != before_edges) {
             // Round-robin routing depends on outgoing-edge insertion order, so any edge
             // edit invalidates every saved counter position.

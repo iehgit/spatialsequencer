@@ -19,6 +19,7 @@ namespace spatial_midi {
         ~MidiNoteInputWorker();
 
         MidiNoteInputWorker(const MidiNoteInputWorker &) = delete;
+
         MidiNoteInputWorker &operator=(const MidiNoteInputWorker &) = delete;
 
         [[nodiscard]] std::optional<std::string> pop_failure();

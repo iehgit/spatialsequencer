@@ -88,8 +88,7 @@ namespace spatial_midi {
             }
 
             void skip_space() {
-                while (position_ < input_.size() &&
-                       std::isspace(static_cast<unsigned char>(input_[position_]))) {
+                while (position_ < input_.size() && std::isspace(static_cast<unsigned char>(input_[position_]))) {
                     ++position_;
                 }
             }
@@ -123,8 +122,7 @@ namespace spatial_midi {
                         parse_literal("null");
                         return JsonValue{nullptr};
                     default:
-                        if (input_[position_] == '-' ||
-                            std::isdigit(static_cast<unsigned char>(input_[position_]))) {
+                        if (input_[position_] == '-' || std::isdigit(static_cast<unsigned char>(input_[position_]))) {
                             return JsonValue{parse_number()};
                         }
                         fail("Unexpected token");
@@ -208,14 +206,12 @@ namespace spatial_midi {
             double parse_number() {
                 const std::size_t begin = position_;
                 if (input_[position_] == '-') ++position_;
-                while (position_ < input_.size() &&
-                       std::isdigit(static_cast<unsigned char>(input_[position_]))) {
+                while (position_ < input_.size() && std::isdigit(static_cast<unsigned char>(input_[position_]))) {
                     ++position_;
                 }
                 if (position_ < input_.size() && input_[position_] == '.') {
                     ++position_;
-                    while (position_ < input_.size() &&
-                           std::isdigit(static_cast<unsigned char>(input_[position_]))) {
+                    while (position_ < input_.size() && std::isdigit(static_cast<unsigned char>(input_[position_]))) {
                         ++position_;
                     }
                 }
@@ -291,14 +287,12 @@ namespace spatial_midi {
     }
 
     Node *Graph::node_at(int x, int y) noexcept {
-        const auto it = std::ranges::find_if(
-            nodes_, [x, y](const Node &node) { return node.x == x && node.y == y; });
+        const auto it = std::ranges::find_if(nodes_, [x, y](const Node &node) { return node.x == x && node.y == y; });
         return it == nodes_.end() ? nullptr : &*it;
     }
 
     const Node *Graph::node_at(int x, int y) const noexcept {
-        const auto it = std::ranges::find_if(
-            nodes_, [x, y](const Node &node) { return node.x == x && node.y == y; });
+        const auto it = std::ranges::find_if(nodes_, [x, y](const Node &node) { return node.x == x && node.y == y; });
         return it == nodes_.end() ? nullptr : &*it;
     }
 
@@ -317,12 +311,10 @@ namespace spatial_midi {
             return;
         }
 
-        if (node.pitches.size() < kMinPitchSlots ||
-            node.pitches.size() > kMaxPitchSlots) {
+        if (node.pitches.size() < kMinPitchSlots || node.pitches.size() > kMaxPitchSlots) {
             throw GraphError("A musical node must contain between 1 and 6 pitches");
         }
-        if (std::ranges::any_of(
-            node.pitches, [](int pitch) { return pitch < 0 || pitch > 127; })) {
+        if (std::ranges::any_of(node.pitches, [](int pitch) { return pitch < 0 || pitch > 127; })) {
             throw GraphError("MIDI pitches must be between 0 and 127");
         }
         if (node.velocity < 0 || node.velocity > 127) {
@@ -330,14 +322,8 @@ namespace spatial_midi {
         }
     }
 
-    Node &Graph::add_node(
-        int x,
-        int y,
-        int pitch,
-        int velocity,
-        bool silenced,
-        std::vector<int> pitches,
-        RoutingMode routing_mode) {
+    Node &Graph::add_node(int x, int y, int pitch, int velocity, bool silenced, std::vector<int> pitches,
+                          RoutingMode routing_mode) {
         if (node_at(x, y) != nullptr) {
             throw GraphError("That grid cell is already occupied");
         }
@@ -345,15 +331,7 @@ namespace spatial_midi {
             pitches.push_back(pitch);
         }
 
-        Node node{
-            next_node_id_,
-            x,
-            y,
-            std::move(pitches),
-            velocity,
-            silenced,
-            routing_mode,
-        };
+        Node node{next_node_id_, x, y, std::move(pitches), velocity, silenced, routing_mode,};
         validate_node(node);
         nodes_.push_back(std::move(node));
         ++next_node_id_;
@@ -365,16 +343,7 @@ namespace spatial_midi {
             throw GraphError("That grid cell is already occupied");
         }
 
-        Node node{
-            next_node_id_,
-            x,
-            y,
-            {},
-            kDefaultVelocity,
-            false,
-            routing_mode,
-            NodeType::Relay,
-        };
+        Node node{next_node_id_, x, y, {}, kDefaultVelocity, false, routing_mode, NodeType::Relay,};
         validate_node(node);
         nodes_.push_back(std::move(node));
         ++next_node_id_;
@@ -384,8 +353,7 @@ namespace spatial_midi {
     void Graph::insert_node(Node node) {
         validate_node(node);
         if (find_node(node.id) != nullptr) {
-            throw GraphError(
-                "Invalid or duplicate node ID: " + std::to_string(node.id));
+            throw GraphError("Invalid or duplicate node ID: " + std::to_string(node.id));
         }
         if (node_at(node.x, node.y) != nullptr) {
             throw GraphError("Project file has multiple nodes in one grid cell");
@@ -397,9 +365,7 @@ namespace spatial_midi {
 
     void Graph::delete_node(int node_id) {
         require_node(node_id);
-        std::erase_if(
-            nodes_,
-            [node_id](const Node &node) { return node.id == node_id; });
+        std::erase_if(nodes_, [node_id](const Node &node) { return node.id == node_id; });
         std::erase_if(edges_, [node_id](const Edge &edge) {
             return edge.source_id == node_id || edge.target_id == node_id;
         });
@@ -411,8 +377,7 @@ namespace spatial_midi {
 
     void Graph::move_node(int node_id, int x, int y) {
         Node &node = require_node(node_id);
-        if (const Node *occupant = node_at(x, y);
-            occupant != nullptr && occupant->id != node_id) {
+        if (const Node *occupant = node_at(x, y); occupant != nullptr && occupant->id != node_id) {
             throw GraphError("That grid cell is already occupied");
         }
 
@@ -427,9 +392,7 @@ namespace spatial_midi {
     }
 
     int Graph::transpose(int node_id, int semitones) {
-        return set_pitch(
-            node_id,
-            require_musical_node(node_id).pitches.front() + semitones);
+        return set_pitch(node_id, require_musical_node(node_id).pitches.front() + semitones);
     }
 
     int Graph::set_last_pitch(int node_id, int pitch) {
@@ -439,9 +402,7 @@ namespace spatial_midi {
     }
 
     int Graph::transpose_last(int node_id, int semitones) {
-        return set_last_pitch(
-            node_id,
-            require_musical_node(node_id).pitches.back() + semitones);
+        return set_last_pitch(node_id, require_musical_node(node_id).pitches.back() + semitones);
     }
 
     int Graph::set_velocity(int node_id, int velocity) {
@@ -500,10 +461,9 @@ namespace spatial_midi {
     }
 
     RoutingMode Graph::toggle_routing_mode(int node_id) {
-        const RoutingMode next =
-                require_node(node_id).routing_mode == RoutingMode::Random
-                    ? RoutingMode::Counter
-                    : RoutingMode::Random;
+        const RoutingMode next = require_node(node_id).routing_mode == RoutingMode::Random
+                                     ? RoutingMode::Counter
+                                     : RoutingMode::Random;
         return set_routing_mode(node_id, next);
     }
 
@@ -538,11 +498,9 @@ namespace spatial_midi {
     int Graph::remove_outgoing(int source_id) {
         require_node(source_id);
         const auto old_size = edges_.size();
-        std::erase_if(
-            edges_,
-            [source_id](const Edge &edge) {
-                return edge.source_id == source_id;
-            });
+        std::erase_if(edges_, [source_id](const Edge &edge) {
+            return edge.source_id == source_id;
+        });
         return static_cast<int>(old_size - edges_.size());
     }
 
@@ -581,8 +539,7 @@ namespace spatial_midi {
                 throw GraphError("Node has no outgoing edge");
             }
             if (outgoing.size() > 1) {
-                throw GraphError(
-                    "Specify a target for a node with multiple outputs");
+                throw GraphError("Specify a target for a node with multiple outputs");
             }
             chosen = outgoing.front();
         } else {
@@ -635,28 +592,23 @@ namespace spatial_midi {
         if (!std::isfinite(settings.bpm) || settings.bpm < kMinTempo || settings.bpm > kMaxTempo) {
             throw GraphError("Project BPM must be between 20 and 300");
         }
-        if (settings.release_gap_eighths < kMinReleaseGapEighths ||
-            settings.release_gap_eighths > kMaxReleaseGapEighths) {
+        if (settings.release_gap_eighths < kMinReleaseGapEighths || settings.release_gap_eighths >
+            kMaxReleaseGapEighths) {
             throw GraphError("Project Release Gap must be between 0/8 and 4/8");
         }
 
         std::ostringstream out;
         out << std::setprecision(15);
-        out << "{\n  \"format\": \"" << escape_json(kProjectFormat) << "\",\n"
-                << "  \"version\": " << kProjectVersion << ",\n"
-                << "  \"bpm\": " << settings.bpm << ",\n"
-                << "  \"release_gap_eighths\": " << settings.release_gap_eighths << ",\n"
-                << "  \"start_node_id\": ";
+        out << "{\n  \"format\": \"" << escape_json(kProjectFormat) << "\",\n" << "  \"version\": " << kProjectVersion
+                << ",\n" << "  \"bpm\": " << settings.bpm << ",\n" << "  \"release_gap_eighths\": " << settings.
+                release_gap_eighths << ",\n" << "  \"start_node_id\": ";
         if (start_node_id_) out << *start_node_id_;
         else out << "null";
         out << ",\n  \"nodes\": [";
         for (std::size_t i = 0; i < nodes_.size(); ++i) {
             const Node &node = nodes_[i];
-            out << (i == 0 ? "\n" : ",\n")
-                    << "    {\n"
-                    << "      \"id\": " << node.id << ",\n"
-                    << "      \"x\": " << node.x << ",\n"
-                    << "      \"y\": " << node.y << ",\n";
+            out << (i == 0 ? "\n" : ",\n") << "    {\n" << "      \"id\": " << node.id << ",\n" << "      \"x\": " <<
+                    node.x << ",\n" << "      \"y\": " << node.y << ",\n";
 
             if (is_relay(node)) {
                 out << "      \"type\": \"relay\",\n";
@@ -666,20 +618,18 @@ namespace spatial_midi {
                     if (p) out << ", ";
                     out << node.pitches[p];
                 }
-                out << "],\n"
-                        << "      \"velocity\": " << node.velocity << ",\n"
-                        << "      \"silenced\": " << (node.silenced ? "true" : "false") << ",\n";
+                out << "],\n" << "      \"velocity\": " << node.velocity << ",\n" << "      \"silenced\": " << (
+                    node.silenced ? "true" : "false") << ",\n";
             }
 
-            out << "      \"routing_mode\": \"" << routing_mode_name(node.routing_mode) << "\"\n"
-                    << "    }";
+            out << "      \"routing_mode\": \"" << routing_mode_name(node.routing_mode) << "\"\n" << "    }";
         }
         if (!nodes_.empty()) out << '\n';
         out << "  ],\n  \"edges\": [";
         for (std::size_t i = 0; i < edges_.size(); ++i) {
             const Edge &edge = edges_[i];
-            out << (i == 0 ? "\n" : ",\n")
-                    << "    {\"source_id\": " << edge.source_id << ", \"target_id\": " << edge.target_id << "}";
+            out << (i == 0 ? "\n" : ",\n") << "    {\"source_id\": " << edge.source_id << ", \"target_id\": " << edge.
+                    target_id << "}";
         }
         if (!edges_.empty()) out << '\n';
         out << "  ]\n}\n";
@@ -689,22 +639,23 @@ namespace spatial_midi {
     Graph Graph::from_json(std::string_view json, ProjectSettings *settings) {
         const JsonValue parsed = JsonParser(json).parse();
         const auto &root = parsed.object("Project file");
-        if (required(root, "format").string("format") != kProjectFormat) throw GraphError(
-            "Unrecognized project file format");
+        if (required(root, "format").string("format") != kProjectFormat)
+            throw GraphError("Unrecognized project file format");
         const int version = required(root, "version").integer("version");
-        if (version != kProjectVersion) throw GraphError("Unsupported project file version: " + std::to_string(version));
+        if (version != kProjectVersion) throw
+                GraphError("Unsupported project file version: " + std::to_string(version));
         ProjectSettings loaded_settings;
         if (const JsonValue *bpm = optional(root, "bpm")) {
             loaded_settings.bpm = bpm->number("Project BPM");
-            if (!std::isfinite(loaded_settings.bpm) || loaded_settings.bpm < kMinTempo ||
-                loaded_settings.bpm > kMaxTempo) {
+            if (!std::isfinite(loaded_settings.bpm) || loaded_settings.bpm < kMinTempo || loaded_settings.bpm >
+                kMaxTempo) {
                 throw GraphError("Project BPM must be between 20 and 300");
             }
         }
         if (const JsonValue *gap = optional(root, "release_gap_eighths")) {
             loaded_settings.release_gap_eighths = gap->integer("Project Release Gap");
-            if (loaded_settings.release_gap_eighths < kMinReleaseGapEighths ||
-                loaded_settings.release_gap_eighths > kMaxReleaseGapEighths) {
+            if (loaded_settings.release_gap_eighths < kMinReleaseGapEighths || loaded_settings.release_gap_eighths >
+                kMaxReleaseGapEighths) {
                 throw GraphError("Project Release Gap must be between 0/8 and 4/8");
             }
         }
@@ -812,13 +763,7 @@ namespace spatial_midi {
         std::vector<int> ids;
         ids.reserve(positions.size());
         for (std::size_t index = 0; index < positions.size(); ++index) {
-            ids.push_back(
-                graph.add_node(
-                    positions[index][0],
-                    positions[index][1],
-                    pitches[index],
-                    velocity)
-                .id);
+            ids.push_back(graph.add_node(positions[index][0], positions[index][1], pitches[index], velocity).id);
         }
 
         for (std::size_t index = 0; index < ids.size(); ++index) {

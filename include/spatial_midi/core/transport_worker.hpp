@@ -27,7 +27,8 @@ namespace spatial_midi {
     // it never calls the sequencer or MIDI backends directly.
     class TransportWorker {
     public:
-        TransportWorker(Graph graph, std::shared_ptr<MidiOutput> output, double bpm = kDefaultTempo, int output_channel = 0);
+        TransportWorker(Graph graph, std::shared_ptr<MidiOutput> output, double bpm = kDefaultTempo,
+                        int output_channel = 0);
 
         ~TransportWorker();
 
@@ -41,25 +42,25 @@ namespace spatial_midi {
 
         [[nodiscard]] std::vector<TransportFailure> pop_failures();
 
-        void start(std::optional<double> now = std::nullopt);
+        void start(std::optional<TimePoint> now = std::nullopt);
 
-        bool pause(std::optional<double> now = std::nullopt);
+        bool pause(std::optional<TimePoint> now = std::nullopt);
 
-        bool resume(std::optional<double> now = std::nullopt);
+        bool resume(std::optional<TimePoint> now = std::nullopt);
 
         void stop();
 
         void emergency_stop();
 
-        void set_tempo(double bpm, std::optional<double> now = std::nullopt);
+        void set_tempo(double bpm, std::optional<TimePoint> now = std::nullopt);
 
         int set_release_gap_eighths(int eighths);
 
         int adjust_release_gap_eighths(int delta);
 
-        bool toggle_midi_clock(std::optional<bool> enabled = std::nullopt, std::optional<double> now = std::nullopt);
+        bool toggle_midi_clock(std::optional<bool> enabled = std::nullopt, std::optional<TimePoint> now = std::nullopt);
 
-        bool set_external_clock(bool enabled, std::optional<double> now = std::nullopt);
+        bool set_external_clock(bool enabled, std::optional<TimePoint> now = std::nullopt);
 
         void set_midi_backend(std::shared_ptr<MidiOutput> output);
 
@@ -139,13 +140,13 @@ namespace spatial_midi {
 
         void run(std::stop_token stop_token);
 
-        void service_transport(double now);
+        void service_transport(TimePoint now);
 
-        void poll_midi_clock_input(double now);
+        void poll_midi_clock_input(TimePoint now);
 
-        void check_clock_watchdog(double now);
+        void check_clock_watchdog(TimePoint now);
 
-        double next_wait_timeout(double now) const;
+        Nanoseconds next_wait_timeout(TimePoint now) const;
 
         void publish_snapshot(bool graph_changed = false);
 
@@ -159,7 +160,7 @@ namespace spatial_midi {
         mutable std::mutex snapshot_mutex_;
         TransportSnapshot cached_snapshot_;
         Graph cached_graph_;
-        double last_heartbeat_ = 0.0;
+        TimePoint last_heartbeat_{};
         std::deque<TransportFailure> failures_;
 
         // condition_mutex_ protects the command queue and shutdown flag.
@@ -175,9 +176,9 @@ namespace spatial_midi {
         std::shared_ptr<MidiClockInput> clock_input_;
         SequencerEngine engine_;
         bool clock_input_enabled_ = false;
-        double next_clock_input_poll_ = 0.0;
-        std::optional<double> clock_watch_started_;
-        std::optional<double> last_clock_arrival_;
+        TimePoint next_clock_input_poll_{};
+        std::optional<TimePoint> clock_watch_started_;
+        std::optional<TimePoint> last_clock_arrival_;
         std::jthread worker_;
     };
 }

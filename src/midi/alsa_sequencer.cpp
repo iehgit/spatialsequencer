@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cerrno>
 #include <charconv>
-#include <cmath>
 #include <limits>
 #include <memory>
 #include <poll.h>
@@ -16,6 +15,9 @@
 namespace spatial_midi {
     namespace {
         constexpr std::uint64_t kNanosecondsPerSecond = 1'000'000'000ULL;
+        constexpr std::uint64_t kMaxRealtimeNs =
+                static_cast<std::uint64_t>(std::numeric_limits<unsigned int>::max()) * kNanosecondsPerSecond + (
+                    kNanosecondsPerSecond - 1);
 
         // ALSA stores source-port, queue, channel, note, and velocity fields in a
         // single byte. Keep every narrowing conversion explicit and validate values
@@ -41,11 +43,12 @@ namespace spatial_midi {
         }
 
         std::uint64_t realtime_to_ns(const snd_seq_real_time_t &value) {
-            return static_cast<std::uint64_t>(value.tv_sec) * kNanosecondsPerSecond +
-                   static_cast<std::uint64_t>(value.tv_nsec);
+            return static_cast<std::uint64_t>(value.tv_sec) * kNanosecondsPerSecond + static_cast<std::uint64_t>(value.
+                       tv_nsec);
         }
 
         snd_seq_real_time_t ns_to_realtime(std::uint64_t value) {
+            value = std::min(value, kMaxRealtimeNs);
             snd_seq_real_time_t result{};
             result.tv_sec = static_cast<unsigned int>(value / kNanosecondsPerSecond);
             result.tv_nsec = static_cast<unsigned int>(value % kNanosecondsPerSecond);
@@ -172,7 +175,7 @@ namespace spatial_midi {
         return result;
     }
 
-    void AlsaMidiOutput::notes_on(std::span<const int> pitches, int velocity, int channel, double deadline) {
+    void AlsaMidiOutput::notes_on(std::span<const int> pitches, int velocity, int channel, TimePoint deadline) {
         std::lock_guard lock(mutex_);
         const snd_seq_real_time_t time = scheduled_time_locked(deadline);
 
@@ -182,7 +185,7 @@ namespace spatial_midi {
         check(snd_seq_drain_output(seq_), "snd_seq_drain_output");
     }
 
-    void AlsaMidiOutput::notes_off(std::span<const int> pitches, int velocity, int channel, double deadline) {
+    void AlsaMidiOutput::notes_off(std::span<const int> pitches, int velocity, int channel, TimePoint deadline) {
         std::lock_guard lock(mutex_);
         const snd_seq_real_time_t time = scheduled_time_locked(deadline);
 
@@ -198,7 +201,7 @@ namespace spatial_midi {
         check(snd_seq_drain_output(seq_), "snd_seq_drain_output");
     }
 
-    void AlsaMidiOutput::send_realtime(std::uint8_t status, double deadline) {
+    void AlsaMidiOutput::send_realtime(std::uint8_t status, TimePoint deadline) {
         std::lock_guard lock(mutex_);
 
         snd_seq_event_t event;
@@ -269,7 +272,7 @@ namespace spatial_midi {
         return valid ? std::optional<AlsaPortAddress>{address} : std::nullopt;
     }
 
-    void AlsaMidiOutput::check(int result, const char *operation) const {
+    void AlsaMidiOutput::check(int result, const char *operation) {
         if (result < 0) {
             throw std::runtime_error(std::string(operation) + ": " + snd_strerror(result));
         }
@@ -301,23 +304,22 @@ namespace spatial_midi {
         // The ALSA queue and std::chrono::steady_clock use different epochs. Take
         // the midpoint around the status call to keep the mapping error bounded by
         // roughly half of the system-call latency.
-        const double before = monotonic_seconds();
+        const TimePoint before = monotonic_now();
         check(snd_seq_get_queue_status(seq_, queue_, status), "snd_seq_get_queue_status");
-        const double after = monotonic_seconds();
+        const TimePoint after = monotonic_now();
 
         const snd_seq_real_time_t *queue_time = snd_seq_queue_status_get_real_time(status);
         queue_epoch_ns_ = realtime_to_ns(*queue_time);
-        monotonic_epoch_ = (before + after) * 0.5;
+        monotonic_epoch_ = before + (after - before) / 2;
     }
 
-    snd_seq_real_time_t AlsaMidiOutput::scheduled_time_locked(double deadline) const {
-        const long double delta_seconds = std::max<long double>(
-            0.0L, static_cast<long double>(deadline) - monotonic_epoch_);
-        const long double available = static_cast<long double>(
-            std::numeric_limits<std::uint64_t>::max() - queue_epoch_ns_);
-        const auto delta_ns = static_cast<std::uint64_t>(std::min(delta_seconds * kNanosecondsPerSecond, available));
+    snd_seq_real_time_t AlsaMidiOutput::scheduled_time_locked(TimePoint deadline) const {
+        const Nanoseconds delta = deadline > monotonic_epoch_ ? deadline - monotonic_epoch_ : Nanoseconds::zero();
+        const std::uint64_t delta_ns = static_cast<std::uint64_t>(delta.count());
+        const std::uint64_t epoch = std::min(queue_epoch_ns_, kMaxRealtimeNs);
+        const std::uint64_t available = kMaxRealtimeNs - epoch;
 
-        return ns_to_realtime(queue_epoch_ns_ + delta_ns);
+        return ns_to_realtime(epoch + std::min(delta_ns, available));
     }
 
     void AlsaMidiOutput::prepare_event_locked(snd_seq_event_t &event, const snd_seq_real_time_t &scheduled_time) {
@@ -433,7 +435,7 @@ namespace spatial_midi {
                 continue;
             }
 
-            const double polled_at = monotonic_seconds();
+            const TimePoint polled_at = monotonic_now();
             result.push_back(MidiRealtimeMessage{*status, event_timestamp(*event, polled_at),});
         }
 
@@ -515,27 +517,48 @@ namespace spatial_midi {
         snd_seq_queue_status_t *status = nullptr;
         snd_seq_queue_status_alloca(&status);
 
-        const double before = monotonic_seconds();
+        const TimePoint before = monotonic_now();
         check(snd_seq_get_queue_status(seq_, queue_, status), "snd_seq_get_queue_status");
-        const double after = monotonic_seconds();
+        const TimePoint after = monotonic_now();
 
         const snd_seq_real_time_t *queue_time = snd_seq_queue_status_get_real_time(status);
         queue_epoch_ns_ = realtime_to_ns(*queue_time);
-        monotonic_epoch_ = (before + after) * 0.5;
+        monotonic_epoch_ = before + (after - before) / 2;
     }
 
-    double AlsaMidiClockInput::event_timestamp(const snd_seq_event_t &event, double fallback) const noexcept {
+    TimePoint AlsaMidiClockInput::event_timestamp(const snd_seq_event_t &event, TimePoint fallback) const noexcept {
         const bool is_realtime = (event.flags & SND_SEQ_TIME_STAMP_MASK) == SND_SEQ_TIME_STAMP_REAL;
         const bool is_absolute = (event.flags & SND_SEQ_TIME_MODE_MASK) == SND_SEQ_TIME_MODE_ABS;
         if (!is_realtime || !is_absolute) {
             return fallback;
         }
 
-        const long double event_ns = static_cast<long double>(realtime_to_ns(event.time.time));
-        const long double epoch_ns = static_cast<long double>(queue_epoch_ns_);
-        const double mapped = monotonic_epoch_ + static_cast<double>(event_ns - epoch_ns) / static_cast<double>(kNanosecondsPerSecond);
+        const std::uint64_t event_ns = realtime_to_ns(event.time.time);
+        const Nanoseconds::rep epoch = monotonic_epoch_.time_since_epoch().count();
+        constexpr Nanoseconds::rep kRepMax = std::numeric_limits<Nanoseconds::rep>::max();
+        constexpr Nanoseconds::rep kRepMin = std::numeric_limits<Nanoseconds::rep>::min();
 
-        return std::isfinite(mapped) ? mapped : fallback;
+        if (event_ns >= queue_epoch_ns_) {
+            const std::uint64_t difference = event_ns - queue_epoch_ns_;
+            if (difference > static_cast<std::uint64_t>(kRepMax)) {
+                return fallback;
+            }
+            const auto delta = static_cast<Nanoseconds::rep>(difference);
+            if (epoch > kRepMax - delta) {
+                return fallback;
+            }
+            return TimePoint{Nanoseconds{epoch + delta}};
+        }
+
+        const std::uint64_t difference = queue_epoch_ns_ - event_ns;
+        if (difference > static_cast<std::uint64_t>(kRepMax)) {
+            return fallback;
+        }
+        const auto delta = static_cast<Nanoseconds::rep>(difference);
+        if (epoch < kRepMin + delta) {
+            return fallback;
+        }
+        return TimePoint{Nanoseconds{epoch - delta}};
     }
 
 
@@ -546,8 +569,8 @@ namespace spatial_midi {
         try {
             check(snd_seq_set_client_name(seq_, client_name.c_str()), "snd_seq_set_client_name");
             create_input_port();
-            source_description_ = "MIDI note input: " + std::to_string(source.client) + ':' +
-                                  std::to_string(source.port);
+            source_description_ = "MIDI note input: " + std::to_string(source.client) + ':' + std::to_string(
+                                      source.port);
         } catch (...) {
             snd_seq_close(seq_);
             seq_ = nullptr;
@@ -589,8 +612,7 @@ namespace spatial_midi {
 
         const unsigned int descriptor_count = static_cast<unsigned int>(descriptor_count_result);
         std::vector<pollfd> descriptors(descriptor_count);
-        check(snd_seq_poll_descriptors(seq_, descriptors.data(), descriptor_count, POLLIN),
-              "snd_seq_poll_descriptors");
+        check(snd_seq_poll_descriptors(seq_, descriptors.data(), descriptor_count, POLLIN), "snd_seq_poll_descriptors");
 
         const auto bounded_timeout = std::clamp<long long>(timeout.count(), 0, std::numeric_limits<int>::max());
         const int ready = ::poll(descriptors.data(), descriptors.size(), static_cast<int>(bounded_timeout));
@@ -622,8 +644,7 @@ namespace spatial_midi {
             }
 
             return MidiNoteMessage{
-                .pitch = event->data.note.note,
-                .velocity = event->data.note.velocity,
+                .pitch = event->data.note.note, .velocity = event->data.note.velocity,
                 .channel = event->data.note.channel,
             };
         }
@@ -642,9 +663,8 @@ namespace spatial_midi {
     }
 
     void AlsaMidiNoteInput::create_input_port() {
-        port_ = snd_seq_create_simple_port(
-            seq_, "Note In", SND_SEQ_PORT_CAP_WRITE | SND_SEQ_PORT_CAP_SUBS_WRITE,
-            SND_SEQ_PORT_TYPE_MIDI_GENERIC | SND_SEQ_PORT_TYPE_APPLICATION);
+        port_ = snd_seq_create_simple_port(seq_, "Note In", SND_SEQ_PORT_CAP_WRITE | SND_SEQ_PORT_CAP_SUBS_WRITE,
+                                           SND_SEQ_PORT_TYPE_MIDI_GENERIC | SND_SEQ_PORT_TYPE_APPLICATION);
         check(port_, "snd_seq_create_simple_port");
 
         snd_seq_port_subscribe_t *subscription = nullptr;

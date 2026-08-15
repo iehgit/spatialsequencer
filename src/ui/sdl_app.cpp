@@ -9,15 +9,15 @@
 namespace spatial_midi {
     namespace {
         constexpr double kPanSpeed = 480.0;
-        constexpr double kResizeRedrawInterval = 1.0 / 30.0;
-        constexpr double kResizeQuietSeconds = 0.15;
-        constexpr double kFrameInterval = 1.0 / 120.0;
+        constexpr Seconds kResizeRedrawInterval{1.0 / 30.0};
+        constexpr auto kResizeQuiet = std::chrono::milliseconds{150};
+        constexpr Seconds kFrameInterval{1.0 / 120.0};
     }
 
     SdlApp::SdlApp(TransportWorker &worker, std::shared_ptr<MidiOutput> output, std::string midi_status,
                    OutputOpener output_opener, ClockInputOpener clock_input_opener, NoteInputOpener note_input_opener,
                    int midi_channel, int note_input_channel, int default_velocity, std::filesystem::path project_file,
-                   std::optional<std::filesystem::path> font_path)
+                   const std::optional<std::filesystem::path>& font_path)
         : worker_(worker), graph_(worker.graph_snapshot()), output_(std::move(output)),
           output_opener_(std::move(output_opener)), clock_input_opener_(std::move(clock_input_opener)),
           note_input_opener_(std::move(note_input_opener)), midi_status_(std::move(midi_status)),
@@ -44,32 +44,32 @@ namespace spatial_midi {
 
 
     int SdlApp::run() {
-        double previous = monotonic_seconds();
+        TimePoint previous = monotonic_now();
 
         while (running_) {
-            const double frame_started = monotonic_seconds();
+            const TimePoint frame_started = monotonic_now();
             handle_events();
 
-            const double now = monotonic_seconds();
-            const double frame = std::min(0.05, now - previous);
+            const TimePoint now = monotonic_now();
+            const Seconds frame = std::min(Seconds{0.05}, Seconds{now - previous});
             previous = now;
 
-            pan_with_keys(frame);
+            pan_with_keys(frame.count());
             consume_transport_failures();
             consume_note_input_failure();
             const TransportSnapshot transport = worker_.snapshot();
             redraw_if_needed(transport, now);
 
-            const double remaining = kFrameInterval - (monotonic_seconds() - frame_started);
-            if (remaining > 0.0) {
-                std::this_thread::sleep_for(std::chrono::duration<double>(remaining));
+            const Nanoseconds elapsed = monotonic_now() - frame_started;
+            if (elapsed < kFrameInterval) {
+                std::this_thread::sleep_for(kFrameInterval - elapsed);
             }
         }
 
         try {
             worker_.close();
         } catch (const std::exception &error) {
-            status("Could not stop timing engine: " + std::string(error.what()), 5.0);
+            status("Could not stop timing engine: " + std::string(error.what()), Seconds{5.0});
         }
         return 0;
     }
@@ -92,11 +92,11 @@ namespace spatial_midi {
         }
 
         if (latest_resize) {
-            const double now = monotonic_seconds();
+            const TimePoint now = monotonic_now();
             if (now >= resize_active_until_) {
                 last_resize_redraw_at_.reset();
             }
-            resize_active_until_ = now + kResizeQuietSeconds;
+            resize_active_until_ = now + kResizeQuiet;
             mark_dirty();
         }
     }
@@ -565,7 +565,7 @@ namespace spatial_midi {
                 ProjectSettings{transport.bpm, transport.release_gap_eighths});
             status("Saved project to " + project_file_.string());
         } catch (const std::exception &error) {
-            status("Could not save project: " + std::string(error.what()), 5.0);
+            status("Could not save project: " + std::string(error.what()), Seconds{5.0});
         }
     }
 
@@ -582,7 +582,7 @@ namespace spatial_midi {
             mark_dirty();
             status("Loaded project from " + project_file_.string());
         } catch (const std::exception &error) {
-            status("Could not load project: " + std::string(error.what()), 5.0);
+            status("Could not load project: " + std::string(error.what()), Seconds{5.0});
         }
     }
 
@@ -602,7 +602,7 @@ namespace spatial_midi {
                 clock_input_ = result.backend;
                 clock_input_connection_status_ = result.status;
                 if (!clock_input_) {
-                    status("Could not enable MIDI Clock input: " + result.status, 5.0);
+                    status("Could not enable MIDI Clock input: " + result.status, Seconds{5.0});
                     return;
                 }
                 worker_.set_midi_clock_input(clock_input_);
@@ -620,7 +620,7 @@ namespace spatial_midi {
         } catch (const std::exception &error) {
             clock_input_.reset();
             clock_input_connection_status_.clear();
-            status("Could not enable MIDI Clock input: " + std::string(error.what()), 5.0);
+            status("Could not enable MIDI Clock input: " + std::string(error.what()), Seconds{5.0});
         }
     }
 
@@ -637,7 +637,7 @@ namespace spatial_midi {
             const NoteInputOpenResult result = note_input_opener_(output_);
             if (!result.backend) {
                 if (!result.status.empty()) {
-                    status("MIDI note input unavailable: " + result.status, 5.0);
+                    status("MIDI note input unavailable: " + result.status, Seconds{5.0});
                 }
                 return;
             }
@@ -648,7 +648,7 @@ namespace spatial_midi {
         } catch (const std::exception &error) {
             note_input_worker_.reset();
             note_input_.reset();
-            status("MIDI note input unavailable: " + std::string(error.what()), 5.0);
+            status("MIDI note input unavailable: " + std::string(error.what()), Seconds{5.0});
         }
     }
 
@@ -711,7 +711,7 @@ namespace spatial_midi {
         note_input_worker_.reset();
         note_input_.reset();
         SDL_FlushEvent(note_input_event_type_);
-        status("MIDI note input unavailable: " + *failure, 5.0);
+        status("MIDI note input unavailable: " + *failure, Seconds{5.0});
     }
 
     void SdlApp::handle_midi_note_entry(int pitch, int velocity) {
@@ -745,20 +745,20 @@ namespace spatial_midi {
                     worker_.snapshot().playing
                         ? "MIDI Clock input lost; using internal clock: " + failure.message
                         : "MIDI Clock input lost: " + failure.message,
-                    5.0);
+                    Seconds{5.0});
             } else if (failure.source == "clock_lost") {
                 midi_clock_input_enabled_ = false;
-                status("MIDI Clock input timed out; using internal clock", 5.0);
+                status("MIDI Clock input timed out; using internal clock", Seconds{5.0});
             } else if (failure.source == "midi_output") {
                 midi_failed(failure.message);
             } else if (failure.source == "timing_overrun") {
-                status("Timing overrun; playback stopped: " + failure.message, 7.5);
+                status("Timing overrun; playback stopped: " + failure.message, Seconds{7.5});
             } else if (failure.source == "worker") {
-                status("Timing engine failed: " + failure.message, 7.5);
+                status("Timing engine failed: " + failure.message, Seconds{7.5});
             } else if (failure.source == "transport") {
-                status("Playback stopped: " + failure.message, 5.0);
+                status("Playback stopped: " + failure.message, Seconds{5.0});
             } else {
-                status(failure.message, 5.0);
+                status(failure.message, Seconds{5.0});
             }
         }
     }
@@ -792,7 +792,7 @@ namespace spatial_midi {
         status(
             "MIDI reconnect: " + output_result + "; " + note_input_result +
             (stopped_playback ? "; playback stopped" : ""),
-            5.0);
+            Seconds{5.0});
     }
 
     void SdlApp::midi_failed(const std::string &message) {
@@ -808,16 +808,16 @@ namespace spatial_midi {
         }
 
         midi_status_ = "No MIDI output";
-        status("MIDI output unavailable: " + message, 5.0);
+        status("MIDI output unavailable: " + message, Seconds{5.0});
     }
 
     void SdlApp::refresh_graph() {
         graph_ = worker_.graph_snapshot();
     }
 
-    void SdlApp::status(std::string message, double seconds) {
+    void SdlApp::status(std::string message, Seconds duration) {
         status_message_ = std::move(message);
-        status_until_ = monotonic_seconds() + seconds;
+        status_until_ = monotonic_now() + to_nanoseconds(duration);
         ++status_revision_;
         mark_dirty();
     }
@@ -836,11 +836,13 @@ namespace spatial_midi {
                           static_cast<double>(kMaxTempo));
     }
 
-    std::string SdlApp::visible_status(double now) const {
+    std::string SdlApp::visible_status(TimePoint now) const {
         return now < status_until_ ? status_message_ : midi_status_;
     }
 
-    SdlApp::RenderState SdlApp::render_state(const TransportSnapshot &transport, double now) const {
+    SdlApp::RenderState SdlApp::render_state(
+        const TransportSnapshot &transport,
+        TimePoint now) const {
         int width = 0;
         int height = 0;
         SDL_GetWindowSize(window_, &width, &height);
@@ -860,7 +862,7 @@ namespace spatial_midi {
         };
     }
 
-    bool SdlApp::redraw_if_needed(const TransportSnapshot &transport, double now) {
+    bool SdlApp::redraw_if_needed(const TransportSnapshot &transport, TimePoint now) {
         const RenderState current_state = render_state(transport, now);
         if (!last_render_state_ || current_state != *last_render_state_) {
             dirty_ = true;
@@ -881,7 +883,9 @@ namespace spatial_midi {
         SDL_RenderPresent(renderer_);
         dirty_ = false;
         last_render_state_ = current_state;
-        last_resize_redraw_at_ = resizing ? std::optional<double>{now} : std::nullopt;
+        last_resize_redraw_at_ = resizing
+                                     ? std::optional<TimePoint>{now}
+                                     : std::nullopt;
         return true;
     }
 

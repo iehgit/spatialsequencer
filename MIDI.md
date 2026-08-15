@@ -8,11 +8,11 @@ One grid step is one sixteenth-note interval. An ordinary edge takes a number of
 
 ```text
 ticks = abs(x2 - x1) + abs(y2 - y1)
-sixteenth_seconds = 60 / BPM / 4
-next_trigger = current_trigger + ticks * sixteenth_seconds
+sixteenth_duration = 60 seconds / BPM / 4
+next_trigger = current_trigger + ticks * sixteenth_duration
 ```
 
-Transport deadlines are derived from the previous musical deadline rather than the worker wake-up time, preventing rendering or small dispatch delays from accumulating into sequencer drift.
+The engine retains fractional musical pulse positions and maps them to nanosecond deadlines from a tempo epoch. Deadlines therefore do not depend on worker wake-up time, and per-step rounding cannot accumulate into drift between note events and MIDI Clock.
 
 ## Note On
 
@@ -42,13 +42,13 @@ The Release Gap provides a real interval between Note Off and the next Note On, 
 
 The current range is:
 
-| Release Gap | Effect |
-| --- | --- |
-| `0/8` | No gap; Note Off and the next trigger share a deadline |
-| `1/8` | Default |
-| `2/8` | Two eighths of a sixteenth-note interval |
-| `3/8` | Three eighths of a sixteenth-note interval |
-| `4/8` | Half of a sixteenth-note interval |
+| Release Gap | Effect                                                 |
+|-------------|--------------------------------------------------------|
+| `0/8`       | No gap; Note Off and the next trigger share a deadline |
+| `1/8`       | Default                                                |
+| `2/8`       | Two eighths of a sixteenth-note interval               |
+| `3/8`       | Three eighths of a sixteenth-note interval             |
+| `4/8`       | Half of a sixteenth-note interval                      |
 
 The setting is global. It changes the end of the current note, not the time of the next node.
 

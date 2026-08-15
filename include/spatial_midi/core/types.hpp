@@ -9,7 +9,9 @@
 
 namespace spatial_midi {
     using Clock = std::chrono::steady_clock;
-    using TimePoint = Clock::time_point;
+    using Nanoseconds = std::chrono::nanoseconds;
+    using Seconds = std::chrono::duration<double>;
+    using TimePoint = std::chrono::time_point<Clock, Nanoseconds>;
 
     inline constexpr int kMinMidiPitch = 0;
     inline constexpr int kMaxMidiPitch = 127;
@@ -72,12 +74,12 @@ namespace spatial_midi {
         friend bool operator==(const Edge &, const Edge &) = default;
     };
 
-    // Realtime input timestamps use the same steady-clock seconds domain as the
-    // sequencer engine. MIDI backends are responsible for mapping device or kernel
-    // timestamps into that domain before returning messages.
+    // Realtime input timestamps use the same nanosecond steady-clock domain as the
+    // sequencer engine. MIDI backends map device or kernel timestamps into that
+    // domain before returning messages.
     struct MidiRealtimeMessage {
         std::uint8_t status = 0;
-        double timestamp = 0.0;
+        TimePoint timestamp{};
     };
 
     struct TransportSnapshot {
@@ -140,7 +142,12 @@ namespace spatial_midi {
         return std::string(names[note % 12]) + std::to_string(note / 12 - 1);
     }
 
-    [[nodiscard]] inline double monotonic_seconds() {
-        return std::chrono::duration<double>(Clock::now().time_since_epoch()).count();
+    [[nodiscard]] inline TimePoint monotonic_now() noexcept {
+        return std::chrono::time_point_cast<Nanoseconds>(Clock::now());
+    }
+
+    template<class Rep, class Period>
+    [[nodiscard]] Nanoseconds to_nanoseconds(std::chrono::duration<Rep, Period> duration) {
+        return std::chrono::round<Nanoseconds>(duration);
     }
 }

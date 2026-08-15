@@ -7,7 +7,6 @@
 #include <SDL.h>
 #include <SDL_ttf.h>
 
-#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -43,7 +42,7 @@ namespace spatial_midi {
                OutputOpener output_opener, ClockInputOpener clock_input_opener, NoteInputOpener note_input_opener,
                int midi_channel, int note_input_channel, int default_velocity,
                std::filesystem::path project_file = "graph.json",
-               std::optional<std::filesystem::path> font_path = std::nullopt);
+               const std::optional<std::filesystem::path>& font_path = std::nullopt);
 
         ~SdlApp();
 
@@ -161,19 +160,19 @@ namespace spatial_midi {
 
         void refresh_graph();
 
-        void status(std::string message, double seconds = 2.5);
+        void status(std::string message, Seconds duration = Seconds{2.5});
 
-        [[nodiscard]] std::string visible_status(double now) const;
+        [[nodiscard]] std::string visible_status(TimePoint now) const;
 
         void mark_dirty() noexcept { dirty_ = true; }
 
-        [[nodiscard]] RenderState render_state(const TransportSnapshot &transport, double now) const;
+        [[nodiscard]] RenderState render_state(const TransportSnapshot &transport, TimePoint now) const;
 
-        bool redraw_if_needed(const TransportSnapshot &transport, double now);
+        bool redraw_if_needed(const TransportSnapshot &transport, TimePoint now);
 
         [[nodiscard]] static double tempo_step(double bpm, int direction) noexcept;
 
-        void draw(const TransportSnapshot &transport, double now);
+        void draw(const TransportSnapshot &transport, TimePoint now);
 
         void draw_grid();
 
@@ -181,7 +180,7 @@ namespace spatial_midi {
 
         void draw_nodes(const TransportSnapshot &transport);
 
-        void draw_panels(const TransportSnapshot &transport, double now);
+        void draw_panels(const TransportSnapshot &transport, TimePoint now);
 
         [[nodiscard]] RightStatusValues make_right_status_values(const TransportSnapshot &transport) const noexcept;
 
@@ -268,10 +267,10 @@ namespace spatial_midi {
         bool running_ = true;
         bool dirty_ = true;
         std::string status_message_;
-        double status_until_ = 0.0;
+        TimePoint status_until_{};
         std::uint64_t status_revision_ = 0;
         std::optional<RenderState> last_render_state_;
-        double resize_active_until_ = 0.0;
-        std::optional<double> last_resize_redraw_at_;
+        TimePoint resize_active_until_{};
+        std::optional<TimePoint> last_resize_redraw_at_;
     };
 }

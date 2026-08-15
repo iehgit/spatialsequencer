@@ -23,8 +23,9 @@
 
 namespace {
     using namespace spatial_midi;
+    using namespace std::chrono_literals;
 
-    constexpr double kEpsilon = 1e-9;
+    constexpr auto kDeadlineEpsilon = 1ns;
 
     // CHECK remains active in Release builds, where NDEBUG disables assert().
     void check_test_condition(bool condition, std::string_view expression,
@@ -43,6 +44,22 @@ namespace {
 
     bool near(double lhs, double rhs, double tolerance = 1e-8) {
         return std::abs(lhs - rhs) <= tolerance;
+    }
+
+    bool near(Seconds lhs, double rhs, double tolerance = 1e-8) {
+        return near(lhs.count(), rhs, tolerance);
+    }
+
+    bool near(TimePoint lhs, TimePoint rhs, Nanoseconds tolerance = 10ns) {
+        return lhs > rhs ? lhs - rhs <= tolerance : rhs - lhs <= tolerance;
+    }
+
+    TimePoint at(Seconds seconds) {
+        return TimePoint{to_nanoseconds(seconds)};
+    }
+
+    TimePoint at(double seconds) {
+        return at(Seconds{seconds});
     }
 
     template<class Predicate>
@@ -65,7 +82,7 @@ namespace {
         int velocity = 0;
         int channel = 0;
         std::uint8_t status = 0;
-        double deadline = 0.0;
+        TimePoint deadline{};
     };
 
     class FakeNoteInput final : public MidiNoteInput {
@@ -140,28 +157,28 @@ namespace {
             return "Fake MIDI";
         }
 
-        void notes_on(std::span<const int> pitches, int velocity, int channel, double deadline) override {
+        void notes_on(std::span<const int> pitches, int velocity, int channel, TimePoint deadline) override {
             events.push_back({
                 RecordedMidi::Kind::On, {pitches.begin(), pitches.end()}, velocity, channel, 0, deadline,
             });
         }
 
-        void notes_off(std::span<const int> pitches, int velocity, int channel, double deadline) override {
+        void notes_off(std::span<const int> pitches, int velocity, int channel, TimePoint deadline) override {
             events.push_back({
                 RecordedMidi::Kind::Off, {pitches.begin(), pitches.end()}, velocity, channel, 0, deadline,
             });
         }
 
         void all_notes_off(int channel) override {
-            events.push_back({RecordedMidi::Kind::AllOff, {}, 0, channel, 0, 0.0});
+            events.push_back({RecordedMidi::Kind::AllOff, {}, 0, channel, 0, TimePoint{}});
         }
 
-        void send_realtime(std::uint8_t status, double deadline) override {
+        void send_realtime(std::uint8_t status, TimePoint deadline) override {
             events.push_back({RecordedMidi::Kind::Realtime, {}, 0, 0, status, deadline});
         }
 
         void clear_scheduled() override {
-            events.push_back({RecordedMidi::Kind::Clear, {}, 0, 0, 0, 0.0});
+            events.push_back({RecordedMidi::Kind::Clear, {}, 0, 0, 0, TimePoint{}});
         }
 
         std::vector<RecordedMidi> events;
@@ -177,12 +194,11 @@ namespace {
         return result;
     }
 
-    std::vector<RecordedMidi> events_at(const FakeMidi &midi, double deadline, double tolerance = 1e-8);
+    std::vector<RecordedMidi> events_at(const FakeMidi &midi, TimePoint deadline, Nanoseconds tolerance = 10ns);
 
     const RecordedMidi *first_event(const FakeMidi &midi, RecordedMidi::Kind kind, int pitch = -1) {
         const auto it = std::ranges::find_if(midi.events, [kind, pitch](const RecordedMidi &event) {
-            return event.kind == kind &&
-                   (pitch < 0 || std::ranges::find(event.pitches, pitch) != event.pitches.end());
+            return event.kind == kind && (pitch < 0 || std::ranges::find(event.pitches, pitch) != event.pitches.end());
         });
         return it == midi.events.end() ? nullptr : &*it;
     }
@@ -394,8 +410,8 @@ namespace {
 
         FakeMidi midi;
         SequencerEngine engine(graph, midi, 120.0, 0, 0, 41);
-        engine.start(0.0);
-        const double arrival = 2.0 * sixteenth_seconds(120.0);
+        engine.start(at(0.0));
+        const TimePoint arrival = at(2.0 * sixteenth_duration(120.0));
         CHECK(note_on_pitches(midi) == std::vector<int>({60}));
         engine.process(arrival);
         CHECK(note_on_pitches(midi) == std::vector<int>({60, 67}));
@@ -415,9 +431,9 @@ namespace {
         relay_start.set_start(start_relay);
         FakeMidi start_midi;
         SequencerEngine start_engine(relay_start, start_midi, 120.0, 0, 1, 42);
-        start_engine.start(5.0);
+        start_engine.start(at(5.0));
         const RecordedMidi *start_on = first_event(start_midi, RecordedMidi::Kind::On, 72);
-        CHECK(start_on && near(start_on->deadline, 5.0));
+        CHECK(start_on && near(start_on->deadline, at(5.0)));
         CHECK(start_engine.current_node_id == start_target);
 
         Graph terminal_relay_graph;
@@ -425,7 +441,7 @@ namespace {
         terminal_relay_graph.set_start(terminal_relay);
         FakeMidi terminal_midi;
         SequencerEngine terminal_engine(terminal_relay_graph, terminal_midi, 120.0, 0, 1, 45);
-        terminal_engine.start(6.0);
+        terminal_engine.start(at(6.0));
         CHECK(!terminal_engine.playing());
         CHECK(first_event(terminal_midi, RecordedMidi::Kind::On) == nullptr);
 
@@ -441,10 +457,10 @@ namespace {
 
         FakeMidi counter_midi;
         SequencerEngine counter_engine(counter_graph, counter_midi, 120.0, 0, 0, 43);
-        counter_engine.start(0.0);
-        const double tick = sixteenth_seconds(120.0);
-        counter_engine.process(tick);
-        counter_engine.process(2.0 * tick);
+        counter_engine.start(at(0.0));
+        const Seconds tick = sixteenth_duration(120.0);
+        counter_engine.process(at(tick));
+        counter_engine.process(at(2.0 * tick));
         CHECK(note_on_pitches(counter_midi) == std::vector<int>({60, 62, 60}));
 
         Graph external_graph;
@@ -459,18 +475,18 @@ namespace {
 
         FakeMidi external_midi;
         SequencerEngine external_engine(external_graph, external_midi, 120.0, 0, 0, 44);
-        external_engine.set_external_clock(true, 0.0);
-        external_engine.process_external_message(kMidiStart, 0.0);
+        external_engine.set_external_clock(true, at(0.0));
+        external_engine.process_external_message(kMidiStart, at(0.0));
         CHECK(note_on_pitches(external_midi) == std::vector<int>({65}));
         for (int pulse = 1; pulse <= kMidiClockPulsesPerSixteenth; ++pulse) {
-            external_engine.process_external_message(kMidiTimingClock, pulse / 48.0);
+            external_engine.process_external_message(kMidiTimingClock, at(pulse / 48.0));
         }
         CHECK(note_on_pitches(external_midi) == std::vector<int>({65, 69}));
     }
 
     void test_internal_transport() {
-        CHECK(near(5.0 * sixteenth_seconds(120.0), 0.625));
-        CHECK(near(midi_clock_interval_seconds(120.0), 1.0 / 48.0));
+        CHECK(near(5.0 * sixteenth_duration(120.0), 0.625));
+        CHECK(near(midi_clock_interval(120.0), 1.0 / 48.0));
 
         Graph graph;
         const int first = graph.add_node(0, 0, 60).id;
@@ -479,32 +495,32 @@ namespace {
         graph.set_start(first);
         FakeMidi midi;
         SequencerEngine engine(graph, midi, 120.0, 0, 1, 1);
-        engine.start(10.0);
-        const double release = 10.0 + 4.875 * sixteenth_seconds(120.0);
-        CHECK(engine.process(release - kEpsilon) == 0);
+        engine.start(at(10.0));
+        const TimePoint release = at(Seconds{10.0} + 4.875 * sixteenth_duration(120.0));
+        CHECK(engine.process(release - kDeadlineEpsilon) == 0);
         CHECK(first_event(midi, RecordedMidi::Kind::Off, 60) == nullptr);
         CHECK(engine.process(release) == 1);
         const auto *off = first_event(midi, RecordedMidi::Kind::Off, 60);
         CHECK(off && near(off->deadline, release));
-        engine.process(10.0 + 5.0 * sixteenth_seconds(120.0));
+        engine.process(at(Seconds{10.0} + 5.0 * sixteenth_duration(120.0)));
         CHECK(note_on_pitches(midi) == std::vector<int>({60, 62}));
 
         Graph chain = make_chain();
         FakeMidi chain_midi;
         SequencerEngine chain_engine(chain, chain_midi, 120.0, 0, 1, 2);
-        chain_engine.start(20.0);
-        chain_engine.process(21.0);
+        chain_engine.start(at(20.0));
+        chain_engine.process(at(21.0));
         CHECK(note_on_pitches(chain_midi) == std::vector<int>({60, 62, 64}));
         CHECK(!chain_engine.playing());
 
         Graph tempo_graph = make_chain();
         FakeMidi tempo_midi;
         SequencerEngine tempo_engine(tempo_graph, tempo_midi, 120.0, 0, 1, 3);
-        tempo_engine.start(0.0);
-        tempo_engine.set_tempo(60.0, 0.125);
-        tempo_engine.process(0.250);
+        tempo_engine.start(at(0.0));
+        tempo_engine.set_tempo(60.0, at(0.125));
+        tempo_engine.process(at(0.250));
         CHECK(note_on_pitches(tempo_midi) == std::vector<int>({60}));
-        tempo_engine.process(0.375);
+        tempo_engine.process(at(0.375));
         CHECK(note_on_pitches(tempo_midi) == std::vector<int>({60, 62}));
 
         Graph chord_graph;
@@ -514,11 +530,11 @@ namespace {
         chord_graph.set_start(chord);
         FakeMidi chord_midi;
         SequencerEngine chord_engine(chord_graph, chord_midi, 120.0, 9);
-        chord_engine.start(0.0);
+        chord_engine.start(at(0.0));
         const auto *on = first_event(chord_midi, RecordedMidi::Kind::On);
         CHECK(on && on->pitches.size() == 6 && on->channel == 9 && on->velocity == 91);
         chord_graph.set_last_pitch(chord, 100);
-        chord_engine.process(0.109375);
+        chord_engine.process(at(0.109375));
         const auto *chord_off = first_event(chord_midi, RecordedMidi::Kind::Off);
         CHECK(chord_off && chord_off->pitches.back() == 79);
 
@@ -527,8 +543,8 @@ namespace {
         rest_graph.set_start(rest);
         FakeMidi rest_midi;
         SequencerEngine rest_engine(rest_graph, rest_midi);
-        rest_engine.start(0.0);
-        rest_engine.process(sixteenth_seconds(120.0));
+        rest_engine.start(at(0.0));
+        rest_engine.process(at(sixteenth_duration(120.0)));
         CHECK(note_on_pitches(rest_midi).empty());
         CHECK(!rest_engine.playing());
     }
@@ -545,18 +561,18 @@ namespace {
         graph.set_start(source);
         FakeMidi midi;
         SequencerEngine engine(graph, midi, 120.0, 0, 1, 99);
-        engine.start(0.0);
-        engine.process(0.375);
+        engine.start(at(0.0));
+        engine.process(at(0.375));
         CHECK(note_on_pitches(midi) == std::vector<int>({60, 62, 60, 67}));
 
         engine.stop();
         midi.events.clear();
-        engine.start(1.0);
-        CHECK(engine.pause(1.04));
+        engine.start(at(1.0));
+        CHECK(engine.pause(at(1.04)));
         CHECK(engine.state == TransportState::Paused);
-        CHECK(engine.resume(2.04));
+        CHECK(engine.resume(at(2.04)));
         CHECK(engine.playing());
-        engine.process(2.125);
+        engine.process(at(2.125));
         CHECK(note_on_pitches(midi).front() == 60);
 
         Graph clock_graph;
@@ -566,8 +582,8 @@ namespace {
         clock_graph.set_start(first);
         FakeMidi clock_midi;
         SequencerEngine clock_engine(clock_graph, clock_midi, 120.0);
-        CHECK(clock_engine.toggle_midi_clock(true, 3.0));
-        clock_engine.start(3.0);
+        CHECK(clock_engine.toggle_midi_clock(true, at(3.0)));
+        clock_engine.start(at(3.0));
         CHECK(clock_midi.events.size() >= 2);
         CHECK(clock_midi.events[clock_midi.events.size() - 2].kind == RecordedMidi::Kind::On);
         CHECK(clock_midi.events.back().kind == RecordedMidi::Kind::Realtime);
@@ -580,10 +596,10 @@ namespace {
         external_graph.set_start(external_first);
         FakeMidi external_midi;
         SequencerEngine external_engine(external_graph, external_midi, 120.0);
-        external_engine.set_external_clock(true, 0.0);
-        external_engine.process_external_message(kMidiStart, 0.0);
+        external_engine.set_external_clock(true, at(0.0));
+        external_engine.process_external_message(kMidiStart, at(0.0));
         for (int pulse = 1; pulse <= 6; ++pulse) {
-            external_engine.process_external_message(kMidiTimingClock, pulse / 48.0);
+            external_engine.process_external_message(kMidiTimingClock, at(pulse / 48.0));
         }
         CHECK(note_on_pitches(external_midi) == std::vector<int>({60, 62}));
 
@@ -594,15 +610,30 @@ namespace {
         delete_graph.set_start(d1);
         FakeMidi delete_midi;
         SequencerEngine delete_engine(delete_graph, delete_midi);
-        delete_engine.start(0.0);
+        delete_engine.start(at(0.0));
         delete_graph.delete_node(d2);
         CHECK(!delete_engine.handle_node_deleted(d2));
-        delete_engine.process(0.25);
+        delete_engine.process(at(0.25));
         CHECK(!delete_engine.playing());
+
+        Graph current_delete_graph;
+        const int current = current_delete_graph.add_node(0, 0, 65).id;
+        const int current_target = current_delete_graph.add_node(2, 0, 67).id;
+        current_delete_graph.connect(current, current_target);
+        current_delete_graph.set_start(current);
+        FakeMidi current_delete_midi;
+        SequencerEngine current_delete_engine(current_delete_graph, current_delete_midi);
+        current_delete_engine.start(at(0.0));
+        current_delete_graph.delete_node(current);
+        CHECK(current_delete_engine.handle_node_deleted(current));
+        current_delete_engine.process(at(0.25));
+        CHECK(current_delete_engine.playing());
+        CHECK(current_delete_engine.current_node_id == current_target);
+        CHECK(note_on_pitches(current_delete_midi) == std::vector<int>({65, 67}));
     }
 
 
-    std::vector<RecordedMidi> events_at(const FakeMidi &midi, double deadline, double tolerance) {
+    std::vector<RecordedMidi> events_at(const FakeMidi &midi, TimePoint deadline, Nanoseconds tolerance) {
         std::vector<RecordedMidi> result;
         for (const auto &event: midi.events) {
             if ((event.kind == RecordedMidi::Kind::On || event.kind == RecordedMidi::Kind::Off || event.kind ==
@@ -622,9 +653,9 @@ namespace {
             graph.set_start(first);
             FakeMidi midi;
             SequencerEngine engine(graph, midi, 120.0, 0, gap, 10);
-            engine.start(1.0);
-            const double expected = 1.0 + (1.0 - gap / 8.0) * sixteenth_seconds(120.0);
-            engine.process(expected - kEpsilon);
+            engine.start(at(1.0));
+            const TimePoint expected = at(Seconds{1.0} + (1.0 - gap / 8.0) * sixteenth_duration(120.0));
+            engine.process(expected - kDeadlineEpsilon);
             CHECK(first_event(midi, RecordedMidi::Kind::Off) == nullptr);
             engine.process(expected);
             const auto *off = first_event(midi, RecordedMidi::Kind::Off);
@@ -634,18 +665,18 @@ namespace {
         Graph graph = make_chain();
         FakeMidi midi;
         SequencerEngine engine(graph, midi, 120.0, 0, 1, 11);
-        engine.start(0.0);
-        engine.process(10.0);
-        std::vector<double> note_on_deadlines;
+        engine.start(at(0.0));
+        engine.process(at(10.0));
+        std::vector<TimePoint> note_on_deadlines;
         for (const auto &event: midi.events) {
             if (event.kind == RecordedMidi::Kind::On) {
                 note_on_deadlines.push_back(event.deadline);
             }
         }
         CHECK(note_on_deadlines.size() == 3);
-        CHECK(near(note_on_deadlines[0], 0.0));
-        CHECK(near(note_on_deadlines[1], 2.0 * sixteenth_seconds(120.0)));
-        CHECK(near(note_on_deadlines[2], 3.0 * sixteenth_seconds(120.0)));
+        CHECK(near(note_on_deadlines[0], at(0.0)));
+        CHECK(near(note_on_deadlines[1], at(2.0 * sixteenth_duration(120.0))));
+        CHECK(near(note_on_deadlines[2], at(3.0 * sixteenth_duration(120.0))));
 
         bool invalid_low = false;
         try { SequencerEngine invalid(graph, midi, 120.0, 0, -1); } catch (const std::invalid_argument &) {
@@ -667,8 +698,8 @@ namespace {
         graph.set_start(first);
         FakeMidi midi;
         SequencerEngine engine(graph, midi, 120.0, 0, 1, 12);
-        engine.toggle_midi_clock(true, 0.0);
-        engine.start(0.0);
+        engine.toggle_midi_clock(true, at(0.0));
+        engine.start(at(0.0));
         CHECK(midi.events.size() >= 5);
         CHECK(midi.events[0].kind == RecordedMidi::Kind::Clear);
         CHECK(midi.events[1].kind == RecordedMidi::Kind::AllOff);
@@ -676,7 +707,7 @@ namespace {
         CHECK(midi.events[3].kind == RecordedMidi::Kind::On);
         CHECK(midi.events[4].kind == RecordedMidi::Kind::Realtime && midi.events[4].status == kMidiTimingClock);
 
-        const double boundary = sixteenth_seconds(120.0);
+        const TimePoint boundary = at(sixteenth_duration(120.0));
         engine.process(boundary);
         const auto boundary_events = events_at(midi, boundary);
         CHECK(boundary_events.size() >= 2);
@@ -692,15 +723,16 @@ namespace {
         loop.set_start(a);
         FakeMidi long_midi;
         SequencerEngine long_engine(loop, long_midi, 123.0, 0, 0, 13);
-        long_engine.toggle_midi_clock(true, 0.0);
-        long_engine.start(0.0);
+        const TimePoint long_epoch = at(200.0 * 24.0 * 60.0 * 60.0);
+        long_engine.toggle_midi_clock(true, long_epoch);
+        long_engine.start(long_epoch);
         long_midi.events.clear();
-        const double tick = sixteenth_seconds(123.0);
+        const Seconds tick = sixteenth_duration(123.0);
         int sounding = 60;
-        const int tick_count = static_cast<int>(30.0 * 60.0 / tick);
+        const int tick_count = static_cast<int>(30.0 * 60.0 / tick.count());
         for (int index = 1; index <= tick_count; ++index) {
             const int next = sounding == 60 ? 62 : 60;
-            long_engine.process(index * tick + 1e-6);
+            long_engine.process(long_epoch + to_nanoseconds(index * tick + 1us));
             CHECK(long_midi.events.size() >= 3);
             const std::size_t n = long_midi.events.size();
             CHECK(long_midi.events[n - 3].kind == RecordedMidi::Kind::Off);
@@ -723,20 +755,20 @@ namespace {
         graph.set_start(first);
         FakeMidi midi;
         SequencerEngine engine(graph, midi, 120.0, 0, 1, 14);
-        engine.start(0.0);
-        engine.toggle_midi_clock(true, 0.050);
+        engine.start(at(0.0));
+        engine.toggle_midi_clock(true, at(0.050));
         CHECK(engine.snapshot().midi_clock_output_switch_pending == true);
-        engine.process(0.124999);
-        CHECK(std::ranges::none_of(midi.events, [](const RecordedMidi& e) { return e.kind ==
-            RecordedMidi::Kind::Realtime && e.status == kMidiStart; }));
-        engine.process(0.125);
+        engine.process(at(0.124999));
+        CHECK(std::ranges::none_of(midi.events, [](const RecordedMidi& e) { return e.kind == RecordedMidi::Kind::
+            Realtime && e.status == kMidiStart; }));
+        engine.process(at(0.125));
         CHECK(midi.events[midi.events.size() - 2].kind == RecordedMidi::Kind::Realtime);
         CHECK(midi.events[midi.events.size() - 2].status == kMidiStart);
         CHECK(midi.events.back().kind == RecordedMidi::Kind::Realtime && midi.events.back().status == kMidiTimingClock);
 
-        engine.toggle_midi_clock(false, 0.130);
+        engine.toggle_midi_clock(false, at(0.130));
         CHECK(engine.snapshot().midi_clock_output_switch_pending == false);
-        engine.process(0.250);
+        engine.process(at(0.250));
         CHECK(midi.events[midi.events.size() - 2].status == kMidiTimingClock);
         CHECK(midi.events.back().status == kMidiStop);
 
@@ -747,11 +779,11 @@ namespace {
         tempo_graph.set_start(t1);
         FakeMidi tempo_midi;
         SequencerEngine tempo_engine(tempo_graph, tempo_midi, 120.0, 0, 1, 15);
-        tempo_engine.toggle_midi_clock(true, 0.0);
-        tempo_engine.start(0.0);
-        tempo_engine.set_tempo(60.0, 0.050);
-        tempo_engine.process(0.450);
-        const auto at_boundary = events_at(tempo_midi, 0.450, 1e-7);
+        tempo_engine.toggle_midi_clock(true, at(0.0));
+        tempo_engine.start(at(0.0));
+        tempo_engine.set_tempo(60.0, at(0.050));
+        tempo_engine.process(at(0.450));
+        const auto at_boundary = events_at(tempo_midi, at(0.450), 100ns);
         bool saw_target = false;
         bool saw_clock_after = false;
         for (const auto &event: at_boundary) {
@@ -774,15 +806,15 @@ namespace {
         graph.set_start(first);
         FakeMidi midi;
         SequencerEngine engine(graph, midi, 120.0, 0, 1, 16);
-        engine.set_external_clock(true, 0.0);
-        engine.process_external_message(kMidiStart, 0.0);
+        engine.set_external_clock(true, at(0.0));
+        engine.process_external_message(kMidiStart, at(0.0));
         for (int pulse = 1; pulse <= 48; ++pulse) {
-            engine.process_external_message(kMidiTimingClock, pulse / 48.0);
+            engine.process_external_message(kMidiTimingClock, at(pulse / 48.0));
         }
         CHECK(std::abs(engine.bpm - 120.0) < 1e-6);
         CHECK(note_on_pitches(midi).size() >= 9);
-        CHECK(engine.process_external_message(kMidiContinue, 2.0) == 0);
-        engine.process_external_message(kMidiStop, 2.1);
+        CHECK(engine.process_external_message(kMidiContinue, at(2.0)) == 0);
+        engine.process_external_message(kMidiStop, at(2.1));
         CHECK(!engine.playing());
         CHECK(first_event(midi, RecordedMidi::Kind::AllOff) != nullptr);
 
@@ -793,18 +825,18 @@ namespace {
         handoff.set_start(h1);
         FakeMidi handoff_midi;
         SequencerEngine handoff_engine(handoff, handoff_midi, 120.0, 0, 1, 17);
-        handoff_engine.start(0.0);
-        handoff_engine.set_external_clock(true, 0.010);
+        handoff_engine.start(at(0.0));
+        handoff_engine.set_external_clock(true, at(0.010));
         CHECK(handoff_engine.snapshot().external_clock_switch_pending == ExternalClockSwitch::ToExternal);
         for (int pulse = 1; pulse <= 6; ++pulse) {
-            handoff_engine.process_external_message(kMidiTimingClock, pulse / 48.0);
+            handoff_engine.process_external_message(kMidiTimingClock, at(pulse / 48.0));
         }
         CHECK(handoff_engine.external_clock_active());
         CHECK(!handoff_engine.snapshot().external_clock_switch_pending);
-        handoff_engine.set_external_clock(false, 0.126);
+        handoff_engine.set_external_clock(false, at(0.126));
         CHECK(handoff_engine.snapshot().external_clock_switch_pending == ExternalClockSwitch::ToInternal);
         for (int pulse = 7; pulse <= 12; ++pulse) {
-            handoff_engine.process_external_message(kMidiTimingClock, pulse / 48.0);
+            handoff_engine.process_external_message(kMidiTimingClock, at(pulse / 48.0));
         }
         CHECK(!handoff_engine.external_clock_active());
         CHECK(handoff_engine.playing());
@@ -817,7 +849,7 @@ namespace {
         graph.set_start(node);
         FakeMidi midi;
         SequencerEngine engine(graph, midi, 120.0, 7);
-        engine.start(0.0);
+        engine.start(at(0.0));
         midi.events.clear();
         engine.stop();
         CHECK(!engine.playing());
@@ -831,8 +863,8 @@ namespace {
         CHECK(midi.events[2].kind == RecordedMidi::Kind::AllOff);
         CHECK(midi.events[2].channel == 7);
 
-        engine.start(1.0);
-        engine.timing_overrun(6.0);
+        engine.start(at(1.0));
+        engine.timing_overrun(6s);
         CHECK(engine.state == TransportState::TimingOverrun);
         CHECK(engine.overrun_count == 1);
 
@@ -872,8 +904,7 @@ namespace {
 
     void test_midi_note_input_worker() {
         auto input = std::make_shared<FakeNoteInput>(std::vector<MidiNoteMessage>{
-            {.pitch = 60, .velocity = 80, .channel = 1},
-            {.pitch = 61, .velocity = 0, .channel = 0},
+            {.pitch = 60, .velocity = 80, .channel = 1}, {.pitch = 61, .velocity = 0, .channel = 0},
             {.pitch = 62, .velocity = 96, .channel = 0},
         });
 
@@ -899,7 +930,8 @@ namespace {
         worker.close();
 
         auto failing_input = std::make_shared<FailingNoteInput>();
-        MidiNoteInputWorker failing_worker(failing_input, 0, [](const MidiNoteMessage &) {});
+        MidiNoteInputWorker failing_worker(failing_input, 0, [](const MidiNoteMessage &) {
+        });
         std::optional<std::string> failure;
         for (int attempt = 0; attempt < 100 && !failure; ++attempt) {
             std::this_thread::sleep_for(std::chrono::milliseconds(2));
@@ -924,39 +956,28 @@ namespace {
         worker.set_midi_clock_input(clock_input);
         CHECK(worker.set_external_clock(true));
 
-        const double pulse_interval = midi_clock_interval_seconds(120.0);
-        const double last_pulse = monotonic_seconds();
-        const double start = last_pulse - kMidiClockPulsesPerSixteenth * pulse_interval;
+        const Seconds pulse_interval = midi_clock_interval(120.0);
+        const TimePoint last_pulse = monotonic_now();
+        const TimePoint start = last_pulse - to_nanoseconds(kMidiClockPulsesPerSixteenth * pulse_interval);
         clock_input->push({kMidiStart, start});
         for (int pulse = 1; pulse <= kMidiClockPulsesPerSixteenth; ++pulse) {
-            clock_input->push({kMidiTimingClock, start + pulse * pulse_interval});
+            clock_input->push({kMidiTimingClock, start + to_nanoseconds(pulse * pulse_interval),});
         }
 
         TransportSnapshot externally_clocked;
-        CHECK(wait_until(std::chrono::milliseconds(500), [&] {
-            externally_clocked = worker.snapshot();
-            return clock_input->empty() && externally_clocked.playing &&
-                   externally_clocked.external_clock_active &&
-                   externally_clocked.current_node_id == first &&
-                   near(externally_clocked.bpm, 120.0);
-        }));
+        CHECK(wait_until(std::chrono::milliseconds(500), [&] { externally_clocked = worker.snapshot(); return
+            clock_input->empty() && externally_clocked.playing && externally_clocked.external_clock_active &&
+            externally_clocked.current_node_id == first && near(externally_clocked.bpm, 120.0, 5e-6); }));
 
         std::vector<TransportFailure> failures;
-        CHECK(wait_until(std::chrono::milliseconds(3500), [&] {
-            const auto current = worker.pop_failures();
-            failures.insert(failures.end(), current.begin(), current.end());
-            return std::ranges::any_of(failures, [](const TransportFailure &failure) {
-                return failure.source == "clock_lost";
-            });
-        }));
+        CHECK(wait_until(std::chrono::milliseconds(3500), [&] { const auto current = worker.pop_failures(); failures.
+            insert(failures.end(), current.begin(), current.end()); return std::ranges::any_of(failures, [](const
+                TransportFailure &failure) { return failure.source == "clock_lost"; }); }));
 
         TransportSnapshot recovered;
-        CHECK(wait_until(std::chrono::milliseconds(1000), [&] {
-            recovered = worker.snapshot();
-            return recovered.playing && recovered.state == TransportState::ClockLost &&
-                   !recovered.external_clock_enabled && !recovered.external_clock_active &&
-                   recovered.current_node_id == second;
-        }));
+        CHECK(wait_until(std::chrono::milliseconds(1000), [&] { recovered = worker.snapshot(); return recovered.playing
+            && recovered.state == TransportState::ClockLost && !recovered.external_clock_enabled && !recovered.
+            external_clock_active && recovered.current_node_id == second; }));
         CHECK(recovered.input_gaps >= 1);
 
         worker.close();
@@ -965,8 +986,8 @@ namespace {
                                           int pitch = -1) -> std::optional<std::size_t> {
             for (std::size_t index = begin; index < midi->events.size(); ++index) {
                 const RecordedMidi &event = midi->events[index];
-                if (event.kind == kind &&
-                    (pitch < 0 || std::ranges::find(event.pitches, pitch) != event.pitches.end())) {
+                if (event.kind == kind && (pitch < 0 || std::ranges::find(event.pitches, pitch) != event.pitches.
+                                           end())) {
                     return index;
                 }
             }

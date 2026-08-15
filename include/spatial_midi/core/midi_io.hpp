@@ -16,13 +16,13 @@ namespace spatial_midi {
 
         [[nodiscard]] virtual std::string description() const = 0;
 
-        virtual void notes_on(std::span<const int> pitches, int velocity, int channel, double deadline) = 0;
+        virtual void notes_on(std::span<const int> pitches, int velocity, int channel, TimePoint deadline) = 0;
 
-        virtual void notes_off(std::span<const int> pitches, int velocity, int channel, double deadline) = 0;
+        virtual void notes_off(std::span<const int> pitches, int velocity, int channel, TimePoint deadline) = 0;
 
         virtual void all_notes_off(int channel) = 0;
 
-        virtual void send_realtime(std::uint8_t status, double deadline) = 0;
+        virtual void send_realtime(std::uint8_t status, TimePoint deadline) = 0;
 
         virtual void clear_scheduled() = 0;
     };
@@ -55,16 +55,16 @@ namespace spatial_midi {
     public:
         [[nodiscard]] std::string description() const override { return "No MIDI output"; }
 
-        void notes_on(std::span<const int>, int, int, double) override {
+        void notes_on(std::span<const int>, int, int, TimePoint) override {
         }
 
-        void notes_off(std::span<const int>, int, int, double) override {
+        void notes_off(std::span<const int>, int, int, TimePoint) override {
         }
 
         void all_notes_off(int) override {
         }
 
-        void send_realtime(std::uint8_t, double) override {
+        void send_realtime(std::uint8_t, TimePoint) override {
         }
 
         void clear_scheduled() override {

@@ -47,10 +47,9 @@ namespace {
                 "  --midi-channel 1..16               " "Output channel (default 1)\n" <<
                 "  --midi-note-input-channel 1..16    " "Note-entry input channel (default 1)\n" <<
                 "  --default-velocity 0..127          " "Velocity for newly created nodes (default " <<
-                spatial_midi::kDefaultVelocity << ")\n" <<
-                "  --project-file PATH                " "F1/F2 project path (default graph.json)\n" <<
-                "  --font PATH                        " "TrueType font for SDL2_ttf\n" <<
-                "  -h, --help                         Show this help\n";
+                spatial_midi::kDefaultVelocity << ")\n" << "  --project-file PATH                "
+                "F1/F2 project path (default graph.json)\n" << "  --font PATH                        "
+                "TrueType font for SDL2_ttf\n" << "  -h, --help                         Show this help\n";
     }
 
     AlsaPortAddress parse_address(const std::string &value, const std::string &option) {
@@ -176,8 +175,7 @@ namespace {
                 // Avoid selecting our own ports or ALSA's System client as the
                 // implicit Clock source.
                 const auto it = std::ranges::find_if(ports, [](const auto &port) {
-                    return port.client_name.find("Spatial MIDI") == std::string::npos &&
-                           port.client_name != "System";
+                    return port.client_name.find("Spatial MIDI") == std::string::npos && port.client_name != "System";
                 });
                 if (it != ports.end()) {
                     source = it->address;
@@ -244,11 +242,8 @@ int main(int argc, char **argv) {
             return open_note_input(source);
         };
 
-        spatial_midi::TransportWorker worker(
-            spatial_midi::create_default_graph(options.default_velocity),
-            opened.backend,
-            spatial_midi::kDefaultTempo,
-            options.midi_channel - 1);
+        spatial_midi::TransportWorker worker(spatial_midi::create_default_graph(options.default_velocity),
+                                             opened.backend, spatial_midi::kDefaultTempo, options.midi_channel - 1);
         spatial_midi::SdlApp app(worker, opened.backend, opened.status, output_opener, clock_input_opener,
                                  note_input_opener, options.midi_channel, options.note_input_channel,
                                  options.default_velocity, options.project_file, options.font);
