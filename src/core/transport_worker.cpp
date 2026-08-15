@@ -22,10 +22,9 @@ namespace spatial_midi {
         constexpr auto kUnresponsive = 5s;
         constexpr auto kTimingOverrun = 5s;
 
-        // Events remain in the engine until their exact deadlines so tempo changes,
-        // pause/resume, clock handoffs, and graph edits can still rescale or cancel them.
-        // ALSA receives absolute timestamps at dispatch, preserving same-deadline ordering.
-        constexpr auto kSchedulingLead = 0ns;
+        // Commit only a small window early so ALSA receives absolute-timestamped
+        // events before their deadlines, while live edits retain a bounded response window.
+        constexpr auto kSchedulingLead = 1ms;
     }
 
     TransportWorker::TransportWorker(Graph graph, std::shared_ptr<MidiOutput> output, double bpm, int output_channel)
@@ -309,7 +308,7 @@ namespace spatial_midi {
                 return;
             }
 
-            (void) engine_.process(now + kSchedulingLead, 512);
+            (void) engine_.process(now + kSchedulingLead, now, 512);
         } catch (const GraphError &error) {
             engine_.emergency_stop();
             record_failure("transport", error.what());

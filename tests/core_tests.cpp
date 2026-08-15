@@ -690,6 +690,42 @@ namespace {
         CHECK(invalid_high);
     }
 
+    void test_processing_horizon_and_lateness() {
+        Graph graph;
+        const int first = graph.add_node(0, 0, 60).id;
+        const int second = graph.add_node(1, 0, 62).id;
+        graph.connect(first, second);
+        graph.connect(second, first);
+        graph.set_start(first);
+
+        FakeMidi midi;
+        SequencerEngine engine(graph, midi, 120.0, 0, 0, 21);
+        engine.toggle_midi_clock(true, at(0.0));
+        engine.start(at(0.0));
+
+        const TimePoint boundary = at(sixteenth_duration(120.0));
+        const Seconds clock_interval = midi_clock_interval(120.0);
+        for (int pulse = 1; pulse < kMidiClockPulsesPerSixteenth; ++pulse) {
+            CHECK(engine.process(at(0.0) + to_nanoseconds(pulse * clock_interval)) == 1);
+        }
+        midi.events.clear();
+
+        const TimePoint observed_early = boundary - 750us;
+        CHECK(engine.process(boundary + 250us, observed_early, 512) == 3);
+
+        const auto boundary_events = events_at(midi, boundary);
+        CHECK(boundary_events.size() == 3);
+        CHECK(boundary_events[0].kind == RecordedMidi::Kind::Off);
+        CHECK(boundary_events[1].kind == RecordedMidi::Kind::On);
+        CHECK(boundary_events[2].kind == RecordedMidi::Kind::Realtime);
+        CHECK(boundary_events[2].status == kMidiTimingClock);
+        CHECK(near(engine.snapshot().max_event_lateness_ms, 0.0));
+
+        const TimePoint next_clock = boundary + to_nanoseconds(midi_clock_interval(120.0));
+        CHECK(engine.process(next_clock + 250us, next_clock + 250us, 512) == 1);
+        CHECK(near(engine.snapshot().max_event_lateness_ms, 0.25, 1e-9));
+    }
+
     void test_clock_output_order_and_long_run() {
         Graph graph;
         const int first = graph.add_node(0, 0, 60).id;
@@ -1156,6 +1192,7 @@ int main() {
         test_internal_transport();
         test_routing_pause_clock_and_deletion();
         test_release_gap_and_absolute_deadlines();
+        test_processing_horizon_and_lateness();
         test_clock_output_order_and_long_run();
         test_live_clock_switch_and_tempo_phase();
         test_external_clock_and_handoffs();

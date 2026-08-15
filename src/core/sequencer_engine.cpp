@@ -503,11 +503,15 @@ namespace spatial_midi {
 
     int SequencerEngine::process(std::optional<TimePoint> now, int max_events) {
         const TimePoint current_time = now.value_or(monotonic_now());
+        return process(current_time, current_time, max_events);
+    }
+
+    int SequencerEngine::process(TimePoint due_through, TimePoint observed_now, int max_events) {
         if (max_events <= 0) {
             return 0;
         }
         if (external_clock_active()) {
-            return process_armed_clock_releases(current_time, max_events);
+            return process_armed_clock_releases(due_through, observed_now, max_events);
         }
 
         int processed = 0;
@@ -526,7 +530,7 @@ namespace spatial_midi {
             const TimePoint switch_deadline = has_switch_deadline ? *clock_output_switch_deadline_ : no_deadline;
 
             const TimePoint due = std::min({transport_deadline, clock_deadline, switch_deadline,});
-            if (due == no_deadline || due > current_time) {
+            if (due == no_deadline || due > due_through) {
                 break;
             }
 
@@ -540,7 +544,7 @@ namespace spatial_midi {
 
             if (transport_precedes) {
                 RealEvent popped = heap_pop(events_);
-                record_deadline_lateness(popped.deadline, current_time);
+                record_deadline_lateness(popped.deadline, observed_now);
                 process_event(popped, popped.deadline);
                 ++processed;
                 continue;
@@ -548,7 +552,7 @@ namespace spatial_midi {
 
             if (has_clock_deadline && (!has_switch_deadline || deadline_not_after(clock_deadline, switch_deadline)) && (
                     !has_transport_deadline || deadline_not_after(clock_deadline, transport_deadline))) {
-                record_deadline_lateness(clock_deadline, current_time);
+                record_deadline_lateness(clock_deadline, observed_now);
                 emit_clock_pulse(clock_deadline);
                 ++processed;
                 continue;
@@ -556,14 +560,14 @@ namespace spatial_midi {
 
             if (has_switch_deadline && (!has_transport_deadline || deadline_not_after(
                                             switch_deadline, transport_deadline))) {
-                record_deadline_lateness(switch_deadline, current_time);
+                record_deadline_lateness(switch_deadline, observed_now);
                 apply_clock_output_switch(switch_deadline);
                 ++processed;
                 continue;
             }
 
             RealEvent popped = heap_pop(events_);
-            record_deadline_lateness(popped.deadline, current_time);
+            record_deadline_lateness(popped.deadline, observed_now);
             process_event(popped, popped.deadline);
             ++processed;
         }
@@ -996,7 +1000,7 @@ namespace spatial_midi {
     }
 
     void SequencerEngine::switch_external_to_internal(TimePoint timestamp) {
-        (void) process_armed_clock_releases(timestamp, 512);
+        (void) process_armed_clock_releases(timestamp, timestamp, 512);
 
         tempo_epoch_time_ = timestamp;
         tempo_epoch_pulse_ = 0.0;
@@ -1098,12 +1102,12 @@ namespace spatial_midi {
         }
     }
 
-    int SequencerEngine::process_armed_clock_releases(TimePoint now, int limit) {
+    int SequencerEngine::process_armed_clock_releases(TimePoint due_through, TimePoint observed_now, int limit) {
         int processed = 0;
-        while (playing() && !armed_clock_releases_.empty() && armed_clock_releases_.front().real_deadline <= now &&
-               processed < limit) {
+        while (playing() && !armed_clock_releases_.empty() && armed_clock_releases_.front().real_deadline <=
+               due_through && processed < limit) {
             ArmedRelease release = release_pop();
-            record_deadline_lateness(release.real_deadline, now);
+            record_deadline_lateness(release.real_deadline, observed_now);
             process_event(release.event, release.real_deadline);
             ++processed;
         }
@@ -1111,7 +1115,7 @@ namespace spatial_midi {
     }
 
     int SequencerEngine::flush_clock_releases_at_pulse(TimePoint timestamp) {
-        int processed = process_armed_clock_releases(timestamp, 512);
+        int processed = process_armed_clock_releases(timestamp, timestamp, 512);
         std::vector<ArmedRelease> retained;
 
         while (!armed_clock_releases_.empty()) {

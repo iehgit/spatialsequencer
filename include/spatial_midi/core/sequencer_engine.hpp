@@ -73,6 +73,11 @@ namespace spatial_midi {
 
         int process(std::optional<TimePoint> now = std::nullopt, int max_events = 512);
 
+        // Process every event through `due_through`, while measuring deadline
+        // lateness against the actual observation time. Wire timestamps are
+        // the events' original deadlines.
+        int process(TimePoint due_through, TimePoint observed_now, int max_events);
+
         int process_external_message(std::uint8_t status, std::optional<TimePoint> now = std::nullopt);
 
         bool handle_node_deleted(int node_id);
@@ -189,7 +194,7 @@ namespace spatial_midi {
         // Tempo estimation accepts MIDI Timing Clock (0xF8) timestamps only.
         void record_external_clock_pulse(TimePoint source_timestamp);
 
-        int process_armed_clock_releases(TimePoint now, int limit);
+        int process_armed_clock_releases(TimePoint due_through, TimePoint observed_now, int limit);
 
         int flush_clock_releases_at_pulse(TimePoint timestamp);
 

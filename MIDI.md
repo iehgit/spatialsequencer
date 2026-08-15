@@ -101,6 +101,8 @@ With external MIDI Clock enabled, the application follows incoming MIDI Timing C
 
 When external Clock is enabled during internal playback, the engine waits for a six-pulse alignment interval before handing playback to the external pulse domain. Disabling external Clock during playback hands timing back to the internal clock on a sixteenth-note boundary.
 
+While either external Clock handoff is pending, a contradictory input toggle is ignored until that handoff completes.
+
 If incoming Clock disappears for the watchdog interval, the application uses its internal clock. Active notes are released during that lost-clock recovery so a missing Clock source does not leave notes hanging.
 
 ## MIDI note entry
@@ -130,4 +132,4 @@ A normal stop also clears pending events, stops MIDI Clock output, sends Note Of
 
 The transport worker sleeps until the next relevant event deadline, MIDI input poll, watchdog deadline, command, or periodic heartbeat. Idle and normal-playback CPU use therefore stays low.
 
-MIDI output is timestamped through an ALSA Sequencer queue. The backend calibrates the ALSA queue clock against the C++ monotonic clock and converts engine deadlines into ALSA real-time timestamps. Pending musical events remain in the engine until their deadline rather than being queued far in advance, allowing live tempo changes, pause/resume, graph edits, Release Gap changes, and clock-domain handoffs to rescale or cancel future events correctly.
+MIDI output is timestamped through an ALSA Sequencer queue. The backend calibrates the ALSA queue clock against the C++ monotonic clock and converts engine deadlines into ALSA real-time timestamps. Events enter the ALSA queue with their original deadlines once they reach a 1 ms scheduling horizon. This bounded look-ahead gives the queue time to absorb small worker wake-up variations while keeping live tempo changes, pause/resume, graph edits, Release Gap changes, and clock-domain handoffs effective until shortly before a deadline.
