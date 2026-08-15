@@ -144,11 +144,15 @@ namespace {
             auto output = std::make_shared<AlsaMidiOutput>();
             std::optional<AlsaPortAddress> destination = selected;
 
-            // An explicitly selected port wins; otherwise use the first writable ALSA destination.
+            // An explicitly selected port wins; otherwise use the first writable
+            // destination that is not one of our own input ports or ALSA's System client.
             if (!destination) {
                 const auto ports = AlsaMidiOutput::list_destinations();
-                if (!ports.empty()) {
-                    destination = ports.front().address;
+                const auto it = std::ranges::find_if(ports, [](const auto &port) {
+                    return port.client_name.find("Spatial MIDI") == std::string::npos && port.client_name != "System";
+                });
+                if (it != ports.end()) {
+                    destination = it->address;
                 }
             }
 
