@@ -109,7 +109,7 @@ If incoming Clock disappears for the watchdog interval, the application uses its
 
 MIDI note entry is a separate, optional input path from MIDI Clock input. It uses its own ALSA client/port and a lightweight input worker, so receiving keyboard notes does not share or consume the event stream used for external Clock synchronization or MIDI output scheduling.
 
-Only MIDI Note On messages with nonzero velocity on the configured note-input channel are considered. Note Off messages and Note On with velocity zero are ignored. When playback is exactly **Stopped** and a musical node is selected, the incoming note replaces that node's first pitch and sets the node velocity. Additional pitches in a paraphonic node are preserved, and the node's note/rest state is unchanged.
+Only MIDI Note On messages with nonzero velocity on the configured note-input channel are considered. Note Off messages and Note On with velocity zero are ignored. When playback is **stopped** and a musical node is selected, the incoming note replaces that node's first pitch and sets the node velocity. Additional pitches in a paraphonic node are preserved, and the node's note/rest state is unchanged.
 
 At all other times—including Running, Paused, Waiting for clock, and clock/error states—the received note is consumed without editing the project. Notes played during playback are not applied later after the transport stops.
 

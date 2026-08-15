@@ -724,6 +724,28 @@ namespace {
         const TimePoint next_clock = boundary + to_nanoseconds(midi_clock_interval(120.0));
         CHECK(engine.process(next_clock + 250us, next_clock + 250us, 512) == 1);
         CHECK(near(engine.snapshot().max_event_lateness_ms, 0.25, 1e-9));
+
+        Graph terminal_graph;
+        const int terminal = terminal_graph.add_node(0, 0, 65).id;
+        terminal_graph.set_start(terminal);
+        FakeMidi terminal_midi;
+        SequencerEngine terminal_engine(terminal_graph, terminal_midi, 120.0, 0, 0, 22);
+        terminal_engine.toggle_midi_clock(true, at(0.0));
+        terminal_engine.start(at(0.0));
+
+        const TimePoint terminal_deadline = at(sixteenth_duration(120.0));
+        CHECK(terminal_engine.process(terminal_deadline - 1ns) == kMidiClockPulsesPerSixteenth - 1);
+        terminal_midi.events.clear();
+        CHECK(terminal_engine.process(terminal_deadline + 250us, terminal_deadline - 750us, 512) == 2);
+
+        const auto terminal_events = events_at(terminal_midi, terminal_deadline);
+        CHECK(terminal_events.size() == 3);
+        CHECK(terminal_events[0].kind == RecordedMidi::Kind::Realtime);
+        CHECK(terminal_events[0].status == kMidiTimingClock);
+        CHECK(terminal_events[1].kind == RecordedMidi::Kind::Off);
+        CHECK(terminal_events[2].kind == RecordedMidi::Kind::Realtime);
+        CHECK(terminal_events[2].status == kMidiStop);
+        CHECK(!terminal_engine.playing());
     }
 
     void test_clock_output_order_and_long_run() {

@@ -614,9 +614,6 @@ namespace spatial_midi {
                 worker_.set_midi_clock_input(clock_input_);
             }
 
-            if (worker_.snapshot().midi_clock_enabled) {
-                worker_.toggle_midi_clock(false);
-            }
             const bool intended_state = worker_.set_external_clock(true);
             midi_clock_input_enabled_ = intended_state;
             if (!intended_state) {

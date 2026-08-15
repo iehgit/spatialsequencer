@@ -161,7 +161,7 @@ namespace spatial_midi {
         void push_clock_event(double pulse_deadline, EventKind kind, int node_id, std::vector<int> pitches = {},
                               bool stop_after = false);
 
-        void finish_playback();
+        void finish_playback(TimePoint wire_time);
 
         void clear_pause_state();
 

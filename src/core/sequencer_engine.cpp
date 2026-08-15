@@ -592,16 +592,16 @@ namespace spatial_midi {
                 current_node_id.reset();
             }
             if (event.stop_after) {
-                finish_playback();
+                finish_playback(wire_time);
             }
         } else if (event.kind == EventKind::Trigger) {
             if (!graph.find_node(event.node_id)) {
-                finish_playback();
+                finish_playback(wire_time);
             } else {
                 trigger_node(event.node_id, event.musical_pulse, event.deadline);
             }
         } else {
-            finish_playback();
+            finish_playback(wire_time);
         }
     }
 
@@ -612,16 +612,16 @@ namespace spatial_midi {
                 current_node_id.reset();
             }
             if (event.stop_after) {
-                finish_playback();
+                finish_playback(wire_time);
             }
         } else if (event.kind == EventKind::Trigger) {
             if (!graph.find_node(event.node_id)) {
-                finish_playback();
+                finish_playback(wire_time);
             } else {
                 trigger_node_external(event.node_id, event.deadline, wire_time);
             }
         } else {
-            finish_playback();
+            finish_playback(wire_time);
         }
     }
 
@@ -802,7 +802,7 @@ namespace spatial_midi {
         state = TransportState::DeviceError;
     }
 
-    void SequencerEngine::finish_playback() {
+    void SequencerEngine::finish_playback(TimePoint wire_time) {
         events_.clear();
         clock_events_.clear();
         armed_clock_releases_.clear();
@@ -812,7 +812,7 @@ namespace spatial_midi {
         current_node_id.reset();
         external_switch_pending_.reset();
         clear_clock_output_switch();
-        stop_clock_output(monotonic_now());
+        stop_clock_output(wire_time);
     }
 
     void SequencerEngine::clear_pause_state() {
@@ -826,7 +826,7 @@ namespace spatial_midi {
     void SequencerEngine::trigger_node(int node_id, double trigger_pulse, TimePoint trigger_time) {
         const Node *node = graph.find_node(node_id);
         if (!node) {
-            finish_playback();
+            finish_playback(trigger_time);
             return;
         }
 
@@ -838,7 +838,7 @@ namespace spatial_midi {
             // already consumed time; its selected outgoing edge contributes none.
             current_node_id.reset();
             if (!edge) {
-                finish_playback();
+                finish_playback(trigger_time);
             } else {
                 trigger_node(edge->target_id, trigger_pulse, trigger_time);
             }
@@ -875,7 +875,7 @@ namespace spatial_midi {
     void SequencerEngine::trigger_node_external(int node_id, double trigger_pulse, TimePoint wire_time) {
         const Node *node = graph.find_node(node_id);
         if (!node) {
-            finish_playback();
+            finish_playback(wire_time);
             return;
         }
 
@@ -886,7 +886,7 @@ namespace spatial_midi {
             // Relay traversal also stays at the same external Clock pulse.
             current_node_id.reset();
             if (!edge) {
-                finish_playback();
+                finish_playback(wire_time);
             } else {
                 trigger_node_external(edge->target_id, trigger_pulse, wire_time);
             }
