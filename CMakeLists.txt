@@ -110,6 +110,7 @@ if(SPATIAL_MIDI_ENABLE_DEB_PACKAGING)
     set(CPACK_DEBIAN_PACKAGE_DESCRIPTION
         "Spatial MIDI Graph Sequencer represents musical structure as a graph on a two-dimensional grid. It sends MIDI through ALSA and provides an SDL2 editor.")
     set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+    set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "fonts-freefont-ttf")
     set(CPACK_DEBIAN_PACKAGE_CONTROL_STRICT_PERMISSION ON)
     set(CPACK_DEBIAN_COMPRESSION_TYPE "xz")
     set(CPACK_DEBIAN_FILE_NAME "DEB-DEFAULT")
