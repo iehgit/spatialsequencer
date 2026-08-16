@@ -322,12 +322,28 @@ namespace spatial_midi {
         const Nanoseconds interval = clock_input_enabled_ ? to_nanoseconds(kInputPoll) : to_nanoseconds(kIdleInputPoll);
         next_clock_input_poll_ = now + interval;
 
+        std::vector<MidiRealtimeMessage> messages;
         try {
-            const auto messages = clock_input_->poll_realtime();
-            if (!clock_input_enabled_) {
-                return;
-            }
+            messages = clock_input_->poll_realtime();
+        } catch (const std::exception &error) {
+            const bool was_timing = clock_input_enabled_ || engine_.external_clock_active();
+            clock_input_.reset();
+            clock_input_enabled_ = false;
+            clock_watch_started_.reset();
+            last_clock_arrival_.reset();
 
+            if (was_timing) {
+                engine_.force_internal_clock(now, true);
+            }
+            record_failure("midi_clock_input", error.what());
+            return;
+        }
+
+        if (!clock_input_enabled_) {
+            return;
+        }
+
+        try {
             for (const MidiRealtimeMessage &message: messages) {
                 (void) engine_.process_external_message(message.status, message.timestamp);
 
@@ -352,17 +368,12 @@ namespace spatial_midi {
                 clock_watch_started_.reset();
                 last_clock_arrival_.reset();
             }
+        } catch (const GraphError &error) {
+            engine_.emergency_stop();
+            record_failure("transport", error.what());
         } catch (const std::exception &error) {
-            const bool was_timing = clock_input_enabled_ || engine_.external_clock_active();
-            clock_input_.reset();
-            clock_input_enabled_ = false;
-            clock_watch_started_.reset();
-            last_clock_arrival_.reset();
-
-            if (was_timing) {
-                engine_.force_internal_clock(now, true);
-            }
-            record_failure("midi_clock_input", error.what());
+            engine_.mark_device_error();
+            record_failure("midi_output", error.what());
         }
     }
 

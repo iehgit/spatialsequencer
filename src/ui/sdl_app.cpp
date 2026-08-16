@@ -198,6 +198,8 @@ namespace spatial_midi {
                     worker_.start();
                     status("Playback started");
                 }
+            } catch (const GraphError &error) {
+                status("Could not start playback: " + std::string(error.what()), Seconds{5.0});
             } catch (const std::exception &error) {
                 midi_failed(error.what());
             }
