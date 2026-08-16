@@ -772,4 +772,17 @@ namespace spatial_midi {
         graph.set_start(ids.front());
         return graph;
     }
+
+    Graph load_project_or_default(const std::filesystem::path &path, int default_velocity,
+                                  ProjectSettings *settings) {
+        if (std::filesystem::exists(path)) {
+            return Graph::load_json(path, settings);
+        }
+
+        if (settings) {
+            *settings = ProjectSettings{};
+        }
+        return create_default_graph(default_velocity);
+    }
+
 }

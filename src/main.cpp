@@ -48,7 +48,7 @@ namespace {
                 "  --midi-note-input-channel 1..16    " "Note-entry input channel (default 1)\n" <<
                 "  --default-velocity 0..127          " "Velocity for newly created nodes (default " <<
                 spatial_midi::kDefaultVelocity << ")\n" << "  --project-file PATH                "
-                "F1/F2 project path (default graph.json)\n" << "  --font PATH                        "
+                "Load at startup; F1/F2 path (default graph.json)\n" << "  --font PATH                        "
                 "TrueType font for SDL2_ttf\n" << "  -h, --help                         Show this help\n";
     }
 
@@ -224,6 +224,10 @@ int main(int argc, char **argv) {
             return 0;
         }
 
+        spatial_midi::ProjectSettings initial_settings;
+        spatial_midi::Graph initial_graph = spatial_midi::load_project_or_default(
+            options.project_file, options.default_velocity, &initial_settings);
+
         // Keep port opening in reusable closures so the UI can reconnect after
         // a device disappears without duplicating command-line policy.
         const auto output_opener = [selected = options.output] {
@@ -246,8 +250,9 @@ int main(int argc, char **argv) {
             return open_note_input(source);
         };
 
-        spatial_midi::TransportWorker worker(spatial_midi::create_default_graph(options.default_velocity),
-                                             opened.backend, spatial_midi::kDefaultTempo, options.midi_channel - 1);
+        spatial_midi::TransportWorker worker(std::move(initial_graph), opened.backend, initial_settings.bpm,
+                                             options.midi_channel - 1);
+        worker.set_release_gap_eighths(initial_settings.release_gap_eighths);
         spatial_midi::SdlApp app(worker, opened.backend, opened.status, output_opener, clock_input_opener,
                                  note_input_opener, options.midi_channel, options.note_input_channel,
                                  options.default_velocity, options.project_file, options.font);

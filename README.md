@@ -93,7 +93,7 @@ Relevant command-line options:
 | `--midi-channel 1..16` | Set the MIDI output channel |
 | `--midi-note-input-channel 1..16` | Set the MIDI note-entry input channel; default is 1 |
 | `--default-velocity 0..127` | Set velocity for the initial graph and newly created musical nodes |
-| `--project-file PATH` | Set the project file used by F1/F2; default is `graph.json` |
+| `--project-file PATH` | Load at startup if present; use for F1/F2; default `graph.json` |
 | `--font PATH` | Optional UI font override |
 | `-h`, `--help` | Show command-line help |
 
@@ -155,7 +155,7 @@ Round-robin routing follows outgoing-edge creation order. Random routing selects
 
 ## Project files
 
-F1 and F2 use the path supplied with `--project-file`, or `graph.json` by default. Saved JSON stores the graph, BPM, and Release Gap.
+At startup, the application loads the path supplied with `--project-file` if it exists, or `graph.json` by default. F1 and F2 save to and load from the same path. Saved JSON stores the graph, BPM, and Release Gap.
 
 A demonstration project is included as `examples/graph.json`.
 

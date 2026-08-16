@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <iostream>
 #include <memory>
@@ -300,6 +301,43 @@ namespace {
         engine.process(terminal_release);
         CHECK(!engine.playing());
         CHECK(same_time(events_of(midi, MidiEvent::Kind::NotesOff).back()->deadline, terminal_release));
+    }
+
+    void live_release_gap_changes_affect_subsequently_triggered_notes() {
+        Graph graph;
+        const int first = graph.add_node(0, 0, 60).id;
+        const int second = graph.add_node(4, 0, 62).id;
+        const int third = graph.add_node(8, 0, 64).id;
+        graph.connect(first, second);
+        graph.connect(second, third);
+        graph.set_start(first);
+
+        RecordingMidi midi;
+        SequencerEngine engine(graph, midi, 120.0, 0, 1, 2);
+        const TimePoint start = at(0.0);
+        const Seconds tick = sixteenth_duration(120.0);
+        engine.start(start);
+
+        CHECK(engine.set_release_gap_eighths(4) == 4);
+
+        const TimePoint release_if_retimed = after(start, 3.5 * tick);
+        engine.process(release_if_retimed);
+        CHECK(events_of(midi, MidiEvent::Kind::NotesOff).empty());
+
+        const TimePoint first_release = after(start, (4.0 - 1.0 / 8.0) * tick);
+        engine.process(first_release);
+        CHECK(events_of(midi, MidiEvent::Kind::NotesOff).size() == 1);
+        CHECK(same_time(events_of(midi, MidiEvent::Kind::NotesOff).back()->deadline, first_release));
+
+        const TimePoint second_trigger = after(start, 4.0 * tick);
+        engine.process(second_trigger);
+        CHECK(triggered_first_pitches(midi) == std::vector<int>({60, 62}));
+
+        const TimePoint second_release = after(second_trigger, 3.5 * tick);
+        engine.process(second_release);
+        CHECK(events_of(midi, MidiEvent::Kind::NotesOff).size() == 2);
+        CHECK(events_of(midi, MidiEvent::Kind::NotesOff).back()->pitches == std::vector<int>({62}));
+        CHECK(same_time(events_of(midi, MidiEvent::Kind::NotesOff).back()->deadline, second_release));
     }
 
     void rests_and_relays_route_without_making_notes() {
@@ -661,6 +699,47 @@ namespace {
         CHECK(triggered_first_pitches(midi) == std::vector<int>({60, 62}));
     }
 
+    void startup_project_loads_existing_file_or_uses_default() {
+        const auto unique = std::chrono::steady_clock::now().time_since_epoch().count();
+        const std::filesystem::path path =
+            std::filesystem::temp_directory_path() / ("spatial-midi-startup-" + std::to_string(unique) + ".json");
+
+        struct Cleanup {
+            std::filesystem::path path;
+            ~Cleanup() {
+                std::error_code ignored;
+                std::filesystem::remove(path, ignored);
+            }
+        } cleanup{path};
+
+        Graph saved;
+        const int first = saved.add_node(1, 2, 74, 88).id;
+        const int second = saved.add_node(5, 2, 79, 91).id;
+        saved.connect(first, second);
+        saved.set_start(first);
+        saved.save_json(path, ProjectSettings{96.0, 3});
+
+        ProjectSettings loaded_settings;
+        const Graph loaded = load_project_or_default(path, 111, &loaded_settings);
+        CHECK(loaded.nodes().size() == 2);
+        CHECK(loaded.start_node_id() == first);
+        CHECK(loaded.find_node(first) != nullptr);
+        CHECK(loaded.find_node(first)->pitches == std::vector<int>({74}));
+        CHECK(loaded_settings.bpm == 96.0);
+        CHECK(loaded_settings.release_gap_eighths == 3);
+
+        std::filesystem::remove(path);
+        loaded_settings = ProjectSettings{240.0, 4};
+        const Graph fallback = load_project_or_default(path, 111, &loaded_settings);
+        CHECK(fallback.nodes().size() == 4);
+        CHECK(fallback.start_node_id().has_value());
+        for (const Node &node: fallback.nodes()) {
+            CHECK(node.velocity == 111);
+        }
+        CHECK(loaded_settings.bpm == kDefaultTempo);
+        CHECK(loaded_settings.release_gap_eighths == kDefaultReleaseGapEighths);
+    }
+
     void invalid_projects_are_rejected_during_load() {
         Graph graph;
         const int first = graph.add_node(0, 0, 60).id;
@@ -812,6 +891,7 @@ int main() {
         {"project round trip preserves the composition", project_round_trip_preserves_the_composition},
         {"graph edits obey grid and MIDI rules", graph_edits_obey_grid_and_midi_rules},
         {"internal playback follows grid time and Release Gap", internal_playback_follows_grid_time_and_release_gap},
+        {"live Release Gap changes affect later notes", live_release_gap_changes_affect_subsequently_triggered_notes},
         {"rests and relays route without making notes", rests_and_relays_route_without_making_notes},
         {"round-robin branches repeat in edge order", round_robin_branches_repeat_in_edge_order},
         {"random routing can reach each outgoing branch", random_routing_can_reach_each_outgoing_branch},
@@ -826,6 +906,7 @@ int main() {
         {"external Clock Release Gap can fall between pulses", external_clock_release_gap_can_release_between_clock_pulses},
         {"pause and resume release then restore the current note", pause_and_resume_release_then_restore_the_current_note},
         {"Clock output pause and resume use Stop and Continue", pause_and_resume_use_midi_stop_and_continue_when_clock_output_is_active},
+        {"startup loads the project file when present", startup_project_loads_existing_file_or_uses_default},
         {"invalid projects are rejected during load", invalid_projects_are_rejected_during_load},
         {"deleting an upcoming node finishes the current note then stops", deleting_the_upcoming_node_lets_the_current_note_finish_then_stops},
         {"note input filters channel and zero velocity", note_input_forwards_only_note_ons_on_the_selected_channel},

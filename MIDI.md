@@ -50,7 +50,7 @@ The current range is:
 | `3/8`       | Three eighths of a sixteenth-note interval             |
 | `4/8`       | Half of a sixteenth-note interval                      |
 
-The setting is global. It changes the end of the current note, not the time of the next node.
+The setting is global. Changes affect subsequently triggered notes.
 
 A dead-end musical node is a special case: it is held for one sixteenth-note interval, then receives Note Off and playback finishes. A dead-end rest waits one sixteenth-note interval before playback finishes. A dead-end relay finishes immediately.
 
@@ -132,4 +132,4 @@ A normal stop also clears pending events, stops MIDI Clock output, sends Note Of
 
 The transport worker sleeps until the next relevant event deadline, MIDI input poll, watchdog deadline, command, or periodic heartbeat. Idle and normal-playback CPU use therefore stays low.
 
-MIDI output is timestamped through an ALSA Sequencer queue. The backend calibrates the ALSA queue clock against the C++ monotonic clock and converts engine deadlines into ALSA real-time timestamps. Events enter the ALSA queue with their original deadlines once they reach a 1 ms scheduling horizon. This bounded look-ahead gives the queue time to absorb small worker wake-up variations while keeping live tempo changes, pause/resume, graph edits, Release Gap changes, and clock-domain handoffs effective until shortly before a deadline.
+MIDI output is timestamped through an ALSA Sequencer queue. The backend calibrates the ALSA queue clock against the C++ monotonic clock and converts engine deadlines into ALSA real-time timestamps. Events enter the ALSA queue with their original deadlines once they reach a 1 ms scheduling horizon. This bounded look-ahead gives the queue time to absorb small worker wake-up variations.

@@ -109,4 +109,8 @@ namespace spatial_midi {
     [[nodiscard]] int manhattan_ticks(const Node &first, const Node &second) noexcept;
 
     [[nodiscard]] Graph create_default_graph(int velocity = kDefaultVelocity);
+
+    [[nodiscard]] Graph load_project_or_default(const std::filesystem::path &path,
+                                                int default_velocity = kDefaultVelocity,
+                                                ProjectSettings *settings = nullptr);
 }
